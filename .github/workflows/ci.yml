@@ -1,0 +1,43 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  compile-sketch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: arduino/compile-sketches@v1
+        with:
+          fqbn: adafruit:samd:adafruit_feather_m0
+          platforms: |
+            - name: adafruit:samd
+              source-url: https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
+          libraries: |
+            - name: WiFi101
+            - name: FlashStorage
+            - name: ArduinoJson
+            - name: Adafruit SSD1306
+            - name: Adafruit GFX Library
+            - name: Adafruit BusIO
+          sketch-paths: |
+            - .
+
+  property-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake -S test -B test/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build tests
+        run: cmake --build test/build --parallel
+
+      - name: Run tests
+        run: ctest --test-dir test/build --output-on-failure
