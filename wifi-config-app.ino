@@ -13,6 +13,29 @@
 #include "web_server.h"
 #include "health_client.h"
 
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 32
+#define OLED_RESET -1
+#define OLED_ADDR 0x3C
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// Helper to show a message on the OLED
+void oledMsg(const char* line1, const char* line2 = "", const char* line3 = "") {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println(line1);
+  if (line2[0]) display.println(line2);
+  if (line3[0]) display.println(line3);
+  display.display();
+}
+
 // Application state machine
 enum AppState {
   STATE_AP_MODE,
@@ -24,17 +47,40 @@ AppState currentState;
 void setup() {
   // Initialize serial for debug output
   Serial.begin(115200);
-  delay(1000); // Brief delay for serial monitor to connect
+  // Wait for serial port to connect (native USB) with 5-second timeout
+  unsigned long serialStart = millis();
+  while (!Serial && millis() - serialStart < 5000) {
+    delay(10);
+  }
+
+  // Initialize OLED display
+  Wire.begin();
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    Serial.println("SSD1306 init failed");
+  }
+  oledMsg("Booting...");
 
   Serial.println("wifi-config-app: booting...");
 
   // Initialize the credential store (reads current state from flash)
   credentialStore_init();
 
+  // Log credential state for debugging
+  Serial.print("Credential store valid flag: ");
+  Serial.println(credentialStore_hasCredentials() ? "true" : "false");
+
   if (!credentialStore_hasCredentials()) {
     // No stored credentials — enter AP mode for configuration
     Serial.println("No credentials found. Starting AP mode.");
-    wifiManager_startAP();
+    oledMsg("No creds", "Starting AP...");
+    bool apResult = wifiManager_startAP();
+    Serial.print("AP start result: ");
+    Serial.println(apResult ? "SUCCESS" : "FAILED");
+    if (apResult) {
+      oledMsg("AP Mode", "SSID: tempmon", "http://192.168.1.1");
+    } else {
+      oledMsg("AP FAILED!");
+    }
     webServer_init(WEB_SERVER_PORT);
     webServer_setMode(MODE_CONFIG_FORM);
     currentState = STATE_AP_MODE;
@@ -45,39 +91,34 @@ void setup() {
 
     Serial.print("Credentials found. Connecting to: ");
     Serial.println(creds.ssid);
+    oledMsg("Creds found", creds.ssid, "Connecting...");
 
     if (wifiManager_connect(creds.ssid, creds.password)) {
       // Connection succeeded — enter STA mode
       Serial.print("Connected! IP: ");
       Serial.println(wifiManager_getIP());
 
+      char ipStr[20];
+      IPAddress ip = wifiManager_getIP();
+      snprintf(ipStr, sizeof(ipStr), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+      oledMsg("Connected!", ipStr, "Starting server...");
+
       webServer_init(WEB_SERVER_PORT);
 
-      // Fetch health data from the remote endpoint
-      HealthResult health = healthClient_fetch();
-      if (health.success) {
-        webServer_setHealthData(health.status, health.version, false, false);
-      } else {
-        // Check if we have cached data from a previous successful fetch
-        char cachedStatus[32];
-        char cachedVersion[32];
-        if (healthClient_getCached(cachedStatus, cachedVersion)) {
-          webServer_setHealthData(cachedStatus, cachedVersion, true, true);
-        } else {
-          webServer_setHealthData("", "", false, true);
-        }
-      }
-
+      // Set initial landing page data (health will be fetched on first request)
+      webServer_setHealthData("", "", false, true);
       webServer_setMode(MODE_LANDING_PAGE);
       currentState = STATE_STA_MODE;
+
+      oledMsg("STA Mode", ipStr, "Server ready");
     } else {
-      // Connection failed — clear credentials and fall back to AP mode
-      Serial.println("Connection failed. Clearing credentials and starting AP.");
+      // Connection failed — clear credentials and reboot into AP mode
+      // (WiFi101 cannot transition STA→AP without a hardware reset)
+      Serial.println("Connection failed. Clearing credentials and rebooting...");
+      oledMsg("Connect FAILED", creds.ssid, "Clearing & reboot");
       credentialStore_clear();
-      wifiManager_startAP();
-      webServer_init(WEB_SERVER_PORT);
-      webServer_setMode(MODE_CONFIG_FORM);
-      currentState = STATE_AP_MODE;
+      delay(2000);
+      NVIC_SystemReset();
     }
   }
 
@@ -95,51 +136,20 @@ void loop() {
       char password[MAX_PASS_LENGTH + 1];
       webServer_getSubmission(ssid, password);
 
-      Serial.print("Attempting connection to: ");
+      Serial.print("Credentials received for: ");
       Serial.println(ssid);
+      oledMsg("Creds received", ssid, "Saving & reboot...");
 
-      if (wifiManager_connect(ssid, password)) {
-        // Connection succeeded
-        Serial.print("Connected! IP: ");
-        Serial.println(wifiManager_getIP());
-
-        // Write credentials to flash
-        if (credentialStore_write(ssid, password)) {
-          // Success - transition to STA mode
-          wifiManager_stopAP();
-
-          // Fetch health data
-          HealthResult health = healthClient_fetch();
-          if (health.success) {
-            webServer_setHealthData(health.status, health.version, false, false);
-          } else {
-            char cachedStatus[32];
-            char cachedVersion[32];
-            if (healthClient_getCached(cachedStatus, cachedVersion)) {
-              webServer_setHealthData(cachedStatus, cachedVersion, true, true);
-            } else {
-              webServer_setHealthData("", "", false, true);
-            }
-          }
-
-          webServer_setMode(MODE_LANDING_PAGE);
-          webServer_setError(NULL); // Clear any previous error
-          currentState = STATE_STA_MODE;
-        } else {
-          // Credential store write failed (Requirement 5.2)
-          Serial.println("Failed to write credentials to flash!");
-          webServer_setError("Failed to save credentials. Please try again.");
-          wifiManager_disconnect();
-          // Remain in AP mode - restart AP since we disconnected
-          wifiManager_startAP();
-        }
+      // Save credentials to flash and reboot.
+      // WiFi101 cannot do beginAP() then begin() in the same session,
+      // so we save first and attempt connection on the next boot.
+      if (credentialStore_write(ssid, password)) {
+        Serial.println("Credentials saved. Rebooting to connect...");
+        delay(500);
+        NVIC_SystemReset();
       } else {
-        // Connection failed or timed out (Requirements 4.1, 4.2, 4.3, 4.4)
-        Serial.println("Connection failed or timed out.");
-        webServer_setError("Connection failed. Please check credentials and try again.");
-        // Remain in AP mode serving config form
-        // Restart AP since WiFi.begin() was called during connection attempt
-        wifiManager_startAP();
+        Serial.println("Failed to write credentials to flash!");
+        webServer_setError("Failed to save credentials. Please try again.");
       }
     }
   } else if (currentState == STATE_STA_MODE) {

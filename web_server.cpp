@@ -3,7 +3,8 @@
 #include <string.h>
 
 // Module-level state
-static WiFiServer* server = NULL;
+static WiFiServer server(80);  // Static instance, port set at construction
+static bool serverStarted = false;
 static WebServerMode currentMode = MODE_CONFIG_FORM;
 static char errorMessage[128] = "";
 
@@ -29,27 +30,29 @@ static void sendLandingPageResponse(WiFiClient& client);
 static void sendErrorResponse(WiFiClient& client, int statusCode, const char* message);
 
 void webServer_init(int port) {
-  if (server != NULL) {
-    delete server;
-  }
-  server = new WiFiServer(port);
-  server->begin();
+  // WiFi101's WiFiServer doesn't support changing port after construction,
+  // but we constructed with port 80. Just call begin().
+  server.begin();
+  serverStarted = true;
 }
 
 void webServer_poll() {
-  if (server == NULL) {
+  if (!serverStarted) {
     return;
   }
 
-  WiFiClient client = server->available();
-  if (!client) {
+  WiFiClient client = server.available();
+  if (!client || !client.connected()) {
     return;
   }
 
   // Wait briefly for data to arrive
   unsigned long start = millis();
   while (!client.available()) {
-    if (millis() - start > 2000) {
+    if (!client.connected()) {
+      return;
+    }
+    if (millis() - start > 5000) {
       client.stop();
       return;
     }
