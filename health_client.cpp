@@ -27,19 +27,27 @@ static bool cacheValid = false;
 
 // Attempt a single HTTP GET request to the health endpoint.
 // Returns true if the response was received and parsed into result.
-static bool attemptFetch(HealthResult& result) {
+// If resolvedIP is provided (non-zero), connect by IP instead of hostname.
+static bool attemptFetch(HealthResult& result, IPAddress resolvedIP = IPAddress(0,0,0,0)) {
   WiFiClient client;
 
-  if (!client.connect(HEALTH_HOST, HEALTH_PORT)) {
+  bool connected;
+  if (resolvedIP != IPAddress(0,0,0,0)) {
+    connected = client.connect(resolvedIP, HEALTH_PORT);
+  } else {
+    connected = client.connect(HEALTH_HOST, HEALTH_PORT);
+  }
+  
+  if (!connected) {
     return false;
   }
 
-  // Send HTTP GET request
+  // Send HTTP GET request (HTTP/1.0 for simpler response handling)
   client.print("GET ");
   client.print(HEALTH_PATH);
-  client.print(" HTTP/1.1\r\nHost: ");
+  client.print(" HTTP/1.0\r\nHost: ");
   client.print(HEALTH_HOST);
-  client.print("\r\nConnection: close\r\n\r\n");
+  client.print("\r\n\r\n");
 
   // Wait for response with timeout (10 seconds)
   unsigned long start = millis();
@@ -54,8 +62,15 @@ static bool attemptFetch(HealthResult& result) {
   // Read entire response into buffer
   char response[512];
   int len = 0;
-  while (client.available() && len < (int)sizeof(response) - 1) {
-    response[len++] = client.read();
+  unsigned long readStart = millis();
+  while (millis() - readStart < 5000 && len < (int)sizeof(response) - 1) {
+    if (client.available()) {
+      response[len++] = client.read();
+    } else if (!client.connected()) {
+      break;
+    } else {
+      delay(10);
+    }
   }
   response[len] = '\0';
   client.stop();
@@ -110,6 +125,10 @@ HealthResult healthClient_fetch() {
   result.version[0] = '\0';
   result.missingFields = false;
 
+  // Resolve DNS once before attempting connections
+  IPAddress resolvedIP;
+  WiFi.hostByName(HEALTH_HOST, resolvedIP);
+
   // Try initial attempt + up to HEALTH_MAX_RETRIES retries
   int totalAttempts = 1 + HEALTH_MAX_RETRIES;
 
@@ -118,7 +137,7 @@ HealthResult healthClient_fetch() {
       delay(HEALTH_RETRY_DELAY_MS);
     }
 
-    if (attemptFetch(result)) {
+    if (attemptFetch(result, resolvedIP)) {
       // We got a response (may or may not have valid JSON)
       if (result.success) {
         // Valid JSON parsed - cache the result

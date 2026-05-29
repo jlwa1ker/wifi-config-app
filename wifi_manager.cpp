@@ -31,9 +31,6 @@ static void ensurePinsConfigured() {
 
 bool wifiManager_startAP() {
   ensurePinsConfigured();
-  // Disconnect any active STA connection without killing the radio
-  WiFi.disconnect();
-  delay(200);
   // Create an open (no encryption) access point with the configured SSID
   int status = WiFi.beginAP(AP_SSID);
   return (status == WL_AP_LISTENING);
