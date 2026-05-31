@@ -63,11 +63,7 @@ AppState currentState;
 void setup() {
   // Initialize serial for debug output
   Serial.begin(115200);
-  // Wait for serial port to connect (native USB) with 5-second timeout
-  unsigned long serialStart = millis();
-  while (!Serial && millis() - serialStart < 5000) {
-    delay(10);
-  }
+  delay(100);
 
   // Initialize OLED display
   Wire.begin();
@@ -117,16 +113,18 @@ void setup() {
       char ipStr[20];
       IPAddress ip = wifiManager_getIP();
       snprintf(ipStr, sizeof(ipStr), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-      oledMsg("Connected!", ipStr, "Starting server...");
+      oledMsg("Connected!", ipStr, "Fetching health...");
 
-      webServer_init(WEB_SERVER_PORT);
-
-      // Set initial landing page data (health will be fetched on first request)
-      webServer_setHealthData("", "", false, true);
-      webServer_setMode(MODE_LANDING_PAGE);
+      // Fetch health and display on OLED (no web server in STA mode)
+      HealthResult health = healthClient_fetch();
+      if (health.success) {
+        char line3[32];
+        snprintf(line3, sizeof(line3), "%s v%s", health.status, health.version);
+        oledMsg("STA Mode", ipStr, line3);
+      } else {
+        oledMsg("STA Mode", ipStr, "Health: failed");
+      }
       currentState = STATE_STA_MODE;
-
-      oledMsg("STA Mode", ipStr, "Server ready");
     } else {
       // Connection failed — clear credentials and reboot into AP mode
       // (WiFi101 cannot transition STA→AP without a hardware reset)
@@ -147,6 +145,19 @@ void loop() {
   webServer_poll();
 
   if (currentState == STATE_AP_MODE) {
+    // Periodically check WiFi status to keep module alive
+    static unsigned long lastCheck = 0;
+    if (millis() - lastCheck > 5000) {
+      lastCheck = millis();
+      int status = WiFi.status();
+      if (status != WL_AP_LISTENING && status != WL_AP_CONNECTED) {
+        // Module dropped AP mode — restart it
+        Serial.println("AP dropped, restarting...");
+        WiFi.beginAP(AP_SSID);
+        webServer_init(WEB_SERVER_PORT);
+      }
+    }
+
     if (webServer_hasSubmission()) {
       char ssid[MAX_SSID_LENGTH + 1];
       char password[MAX_PASS_LENGTH + 1];
@@ -169,22 +180,6 @@ void loop() {
       }
     }
   } else if (currentState == STATE_STA_MODE) {
-    // After serving a landing page request, fetch fresh health data
-    // for the next request. The first request uses data fetched during setup().
-    if (webServer_wasRequestServed()) {
-      HealthResult health = healthClient_fetch();
-      if (health.success) {
-        webServer_setHealthData(health.status, health.version, false, false);
-      } else {
-        // Health fetch failed — use cached data if available
-        char cachedStatus[32];
-        char cachedVersion[32];
-        if (healthClient_getCached(cachedStatus, cachedVersion)) {
-          webServer_setHealthData(cachedStatus, cachedVersion, true, true);
-        } else {
-          webServer_setHealthData("", "", false, true);
-        }
-      }
-    }
+    // Nothing to do — health displayed on OLED at boot
   }
 }

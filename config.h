@@ -25,7 +25,7 @@ const int WEB_SERVER_PORT = 80;
 const unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
 
 // Health endpoint
-const char* const HEALTH_HOST = "tempmon2-alb-150754285.us-east-1.elb.amazonaws.com";
+const char* const HEALTH_HOST = "tempmon.walkerweb.us";
 const char* const HEALTH_PATH = "/health";
 const int HEALTH_PORT = 80;
 const int HEALTH_MAX_RETRIES = 3;

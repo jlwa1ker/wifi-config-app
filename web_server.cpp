@@ -169,6 +169,7 @@ void webServer_poll() {
       client.println("HTTP/1.1 200 OK");
       client.println("Content-Type: text/html");
       client.println("Connection: close");
+      client.println("Cache-Control: no-cache, no-store, must-revalidate");
       client.println();
       client.println("<html><body><p>Connecting...</p></body></html>");
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/") == 0) {
@@ -327,6 +328,7 @@ static void sendConfigFormResponse(WiFiClient& client) {
   client.println("HTTP/1.1 200 OK");
   client.println("Content-Type: text/html; charset=UTF-8");
   client.println("Connection: close");
+  client.println("Cache-Control: no-cache, no-store, must-revalidate");
   client.println();
   client.println("<!DOCTYPE html>");
   client.println("<html lang=\"en\">");
@@ -374,6 +376,7 @@ static void sendErrorResponse(WiFiClient& client, int statusCode, const char* me
   client.println(" Internal Server Error");
   client.println("Content-Type: text/plain");
   client.println("Connection: close");
+  client.println("Cache-Control: no-cache, no-store, must-revalidate");
   client.println();
   client.println(message);
 }
@@ -382,6 +385,7 @@ static void sendLandingPageResponse(WiFiClient& client) {
   client.println("HTTP/1.1 200 OK");
   client.println("Content-Type: text/html");
   client.println("Connection: close");
+  client.println("Cache-Control: no-cache, no-store, must-revalidate");
   client.println();
   client.println("<!DOCTYPE html>");
   client.println("<html lang=\"en\">");
