@@ -113,14 +113,18 @@ void setup() {
       char ipStr[20];
       IPAddress ip = wifiManager_getIP();
       snprintf(ipStr, sizeof(ipStr), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-      oledMsg("Connected!", ipStr, "Starting server...");
+      oledMsg("Connected!", ipStr, "Fetching health...");
 
-      webServer_init(WEB_SERVER_PORT);
-      webServer_setHealthData("ok", "0.1.0", false, false);
-      webServer_setMode(MODE_LANDING_PAGE);
+      // Fetch health and display on OLED (no web server in STA mode)
+      HealthResult health = healthClient_fetch();
+      if (health.success) {
+        char line3[32];
+        snprintf(line3, sizeof(line3), "%s v%s", health.status, health.version);
+        oledMsg("STA Mode", ipStr, line3);
+      } else {
+        oledMsg("STA Mode", ipStr, "Health: failed");
+      }
       currentState = STATE_STA_MODE;
-
-      oledMsg("STA Mode", ipStr, "Ready");
     } else {
       // Connection failed — clear credentials and reboot into AP mode
       // (WiFi101 cannot transition STA→AP without a hardware reset)
@@ -176,7 +180,6 @@ void loop() {
       }
     }
   } else if (currentState == STATE_STA_MODE) {
-    // Health data is fetched once at boot.
-    // Per-request fetch disabled — too blocking for single-threaded model.
+    // Nothing to do — health displayed on OLED at boot
   }
 }
