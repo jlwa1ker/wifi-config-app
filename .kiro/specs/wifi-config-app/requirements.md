@@ -6,13 +6,13 @@ This document specifies the requirements for a WiFi configuration application ru
 
 ## Glossary
 
-- **Device**: The ESP8266 microcontroller running the WiFi configuration application
+- **Device**: The Adafruit Feather M0 (SAMD21) microcontroller with ATWINC1500 WiFi module running the WiFi configuration application
 - **Access_Point**: The unsecured WiFi network created by the Device with SSID "tempmon"
 - **Config_Form**: The HTML web form served by the Device that collects WiFi network name and password
-- **Credential_Store**: The EEPROM/flash memory area where WiFi credentials are persisted
-- **Health_Endpoint**: The remote HTTP endpoint at http://tempmon2-alb-150754285.us-east-1.elb.amazonaws.com/health that returns JSON status information
-- **Landing_Page**: The HTML page served by the Device after successful WiFi connection, displaying health information
-- **Web_Server**: The HTTP server running on the Device that serves the Config_Form and Landing_Page
+- **Credential_Store**: The flash memory area where WiFi credentials are persisted
+- **Health_Endpoint**: The remote HTTP endpoint at http://tempmon.walkerweb.us/health that returns JSON status information
+- **OLED_Display**: The SSD1306 OLED display (I2C address 0x3C) used to show device status and health information
+- **Web_Server**: The HTTP server running on the Device in AP mode that serves the Config_Form
 
 ## Requirements
 
@@ -87,23 +87,21 @@ This document specifies the requirements for a WiFi configuration application ru
 
 #### Acceptance Criteria
 
-1. WHEN the Device successfully connects to WiFi, THE Device SHALL send an HTTP GET request to http://tempmon2-alb-150754285.us-east-1.elb.amazonaws.com/health
+1. WHEN the Device successfully connects to WiFi, THE Device SHALL send an HTTP GET request to http://tempmon.walkerweb.us/health
 2. IF the initial Health_Endpoint request fails due to network issues or server unavailability, THEN THE Device SHALL retry the request up to 3 times with a 5-second delay between attempts
-3. WHEN a user navigates to the Device IP address while connected to WiFi, THE Device SHALL send an HTTP GET request to http://tempmon2-alb-150754285.us-east-1.elb.amazonaws.com/health
-4. THE Device SHALL parse the JSON response from the Health_Endpoint, extracting the "status" and "version" fields
-5. WHEN the Health_Endpoint returns a successful response, THE Device SHALL cache the parsed "status" and "version" values for display during subsequent failures
+3. THE Device SHALL parse the JSON response from the Health_Endpoint, extracting the "status" and "version" fields
+4. WHEN the Health_Endpoint returns a successful response, THE Device SHALL display the parsed "status" and "version" values on the OLED_Display
 
-### Requirement 8: Landing Page Display
+### Requirement 8: Health Status Display
 
-**User Story:** As a user, I want to see the health status of the remote server on a web page, so that I can verify the system is working.
+**User Story:** As a user, I want to see the health status of the remote server on the device display, so that I can verify the system is working.
 
 #### Acceptance Criteria
 
-1. WHEN a user navigates to the Device IP address while connected to WiFi, THE Web_Server SHALL always serve the Landing_Page regardless of health endpoint outcome
-2. WHEN the Health_Endpoint returns a successful response, THE Landing_Page SHALL display the parsed "status" and "version" values
-3. IF the Health_Endpoint request fails or returns an error and cached data is available, THEN THE Landing_Page SHALL display the cached "status" and "version" values alongside an error message indicating the latest health check failed
-4. IF the Health_Endpoint request fails or returns an error and no cached data is available, THEN THE Landing_Page SHALL display an error message indicating the health check failed
-5. THE Landing_Page SHALL display the server status and version in a human-readable HTML format
+1. WHEN the Device successfully connects to WiFi, THE Device SHALL display the health check result on the OLED display
+2. WHEN the Health_Endpoint returns a successful response, THE OLED display SHALL show the parsed "status" and "version" values
+3. IF the Health_Endpoint request fails, THEN THE OLED display SHALL show an error message indicating the health check failed
+4. THE Device SHALL NOT run a Web_Server in STA mode due to ATWINC1500 hardware limitations (WiFiServer and WiFiClient cannot operate simultaneously)
 
 ### Requirement 9: Health Response Parsing
 

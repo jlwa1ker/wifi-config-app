@@ -5,13 +5,13 @@
 This design describes a WiFi configuration application for the Adafruit Feather M0 (SAMD21) microcontroller. The device operates in two modes:
 
 1. **Access Point (AP) mode** — When no WiFi credentials are stored, the device creates an open access point named "tempmon" and serves a web form for credential entry.
-2. **Station (STA) mode** — When valid credentials are stored and connection succeeds, the device connects to the user's WiFi network and serves a landing page displaying health information from a remote server.
+2. **Station (STA) mode** — When valid credentials are stored and connection succeeds, the device connects to the user's WiFi network, fetches health information from a remote server, and displays the result on the OLED display.
 
-The application is built as an Arduino sketch using the WiFi101 library (for the ATWINC1500 radio on the Feather M0), FlashStorage for credential persistence on the SAMD21, and ArduinoJson for parsing the remote health endpoint response.
+The application is built as an Arduino sketch using the WiFi101 library (for the ATWINC1500 radio on the Feather M0), FlashStorage for credential persistence on the SAMD21, ArduinoJson for parsing the remote health endpoint response, and Adafruit_SSD1306 for OLED display output.
 
 ## Architecture
 
-The system follows a state-machine architecture with two primary states and transitions driven by credential availability and connection outcomes.
+The system follows a state-machine architecture with two primary states and transitions driven by credential availability and connection outcomes. Mode transitions require a hardware reset (NVIC_SystemReset) due to WiFi101 library limitations.
 
 ```mermaid
 stateDiagram-v2
@@ -20,12 +20,18 @@ stateDiagram-v2
     CheckCredentials --> APMode : No credentials stored
     CheckCredentials --> ConnectToWiFi : Credentials found
     ConnectToWiFi --> STAMode : Connection succeeds
-    ConnectToWiFi --> ClearCredentials : Connection fails
-    ClearCredentials --> APMode
-    APMode --> ConnectToWiFi : User submits form
-    ConnectToWiFi --> APMode : Connection fails (from form)
-    STAMode --> ServeLandingPage : HTTP request received
+    ConnectToWiFi --> Reboot : Connection fails
+    Reboot --> Boot
+    APMode --> SaveAndReboot : User submits form
+    SaveAndReboot --> Boot
+    STAMode --> FetchHealth : Display on OLED
 ```
+
+## Hardware Constraints
+
+1. **WiFi101 AP↔STA transitions** — The ATWINC1500 module cannot transition between AP and STA modes within a single boot session. All mode changes require `NVIC_SystemReset()`.
+2. **No concurrent server+client** — The ATWINC1500 cannot run WiFiServer and WiFiClient simultaneously. The web server only operates in AP mode; outbound HTTP requests only occur in STA mode.
+3. **Pin configuration** — The Feather M0 WiFi requires `WiFi.setPins(8, 7, 4, 2)` before any WiFi operations.
 
 ### Key Design Decisions
 
@@ -37,7 +43,11 @@ stateDiagram-v2
 
 4. **No HTTPS** — The health endpoint uses plain HTTP. The WiFi101 library supports TLS via `WiFiSSLClient`, but the target endpoint is HTTP-only, so we use `WiFiClient` directly.
 
-5. **Single-threaded cooperative model** — Arduino runs a single `loop()`. The web server is polled each iteration. Outbound health requests are blocking but bounded by timeout.
+5. **Single-threaded cooperative model** — Arduino runs a single `loop()`. The web server is polled each iteration in AP mode. Outbound health requests are blocking but bounded by timeout. Web server and HTTP client cannot operate in the same boot session.
+
+6. **Reboot-based mode transitions** — Due to WiFi101 limitations, switching between AP and STA modes requires `NVIC_SystemReset()`. Credentials are saved to flash before rebooting.
+
+7. **OLED diagnostic display** — An SSD1306 OLED (128x32, I2C 0x3C) shows device state, IP address, and health status at all times.
 
 ## Components and Interfaces
 
@@ -68,7 +78,7 @@ const int WEB_SERVER_PORT = 80;
 const unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
 
 // Health endpoint
-const char* const HEALTH_HOST = "tempmon2-alb-150754285.us-east-1.elb.amazonaws.com";
+const char* const HEALTH_HOST = "tempmon.walkerweb.us";
 const char* const HEALTH_PATH = "/health";
 const int HEALTH_PORT = 80;
 const int HEALTH_MAX_RETRIES = 3;
