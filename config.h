@@ -31,6 +31,14 @@ const int HEALTH_PORT = 80;
 const int HEALTH_MAX_RETRIES = 3;
 const unsigned long HEALTH_RETRY_DELAY_MS = 5000;
 
+// Ingest endpoint (server reporting)
+const char* const INGEST_HOST = "tempmon.walkerweb.us";
+const char* const INGEST_PATH = "/ingest";
+const int INGEST_PORT = 80;
+const char* const DEVICE_LOCATION = "feather-m0-01";
+const unsigned long REPORT_INTERVAL_MS = 900000UL;  // 15 minutes
+const unsigned long INGEST_RESPONSE_TIMEOUT_MS = 10000;
+
 // Credential storage
 const int MAX_SSID_LENGTH = 32;
 const int MAX_PASS_LENGTH = 64;

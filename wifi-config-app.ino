@@ -28,6 +28,12 @@
 #include "wifi_manager.h"
 #include "web_server.h"
 #include "health_client.h"
+#include "sensor_poller.h"
+#include "running_average.h"
+#include "reading_cache.h"
+#include "ntp_client.h"
+#include "server_reporter.h"
+#include "test/temperature_convert.h"
 
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -52,6 +58,70 @@ void oledMsg(const char* line1, const char* line2 = "", const char* line3 = "") 
   display.display();
 }
 
+// Show current sensor averages and cache count (STA mode)
+void oledShowReadings(float temp_f, float humidity_pct, int cacheCount) {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+
+  char line1[22];
+  snprintf(line1, sizeof(line1), "Temp: %.1f F", (double)temp_f);
+  display.println(line1);
+
+  char line2[22];
+  snprintf(line2, sizeof(line2), "Hum:  %.1f %%", (double)humidity_pct);
+  display.println(line2);
+
+  char line3[22];
+  snprintf(line3, sizeof(line3), "Cache: %d readings", cacheCount);
+  display.println(line3);
+
+  display.display();
+}
+
+// Show upload success indicator
+void oledShowUploadSuccess(int sentCount) {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("Upload OK!");
+
+  char line2[22];
+  snprintf(line2, sizeof(line2), "Sent: %d readings", sentCount);
+  display.println(line2);
+
+  display.display();
+}
+
+// Show upload failure indicator with pending cache count
+void oledShowUploadFailed(int cacheCount) {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("Upload FAILED!");
+
+  char line2[22];
+  snprintf(line2, sizeof(line2), "Cached: %d pending", cacheCount);
+  display.println(line2);
+
+  display.display();
+}
+
+// Show NTP synchronization error
+void oledShowNtpError() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("NTP Sync FAILED!");
+  display.println("No time source.");
+  display.println("Retrying...");
+  display.display();
+}
+
 // Application state machine
 enum AppState {
   STATE_AP_MODE,
@@ -59,6 +129,14 @@ enum AppState {
 };
 
 AppState currentState;
+
+// Flag indicating whether the AHT20 sensor initialized successfully.
+// When false, the STA mode loop will not poll the sensor.
+bool sensorReady = false;
+
+// Flag indicating whether NTP synchronization succeeded at boot.
+// When false, the reporting loop will not run (no valid timestamps).
+bool ntpSynced = false;
 
 void setup() {
   // Initialize serial for debug output
@@ -124,6 +202,34 @@ void setup() {
       } else {
         oledMsg("STA Mode", ipStr, "Health: failed");
       }
+
+      // Synchronize clock via NTP before starting sensor/reporting loop.
+      // Readings require accurate timestamps, so NTP must succeed first.
+      oledMsg("NTP Sync", "Contacting server...");
+      if (ntpClient_sync()) {
+        ntpSynced = true;
+        Serial.println("NTP sync succeeded.");
+      } else {
+        ntpSynced = false;
+        Serial.println("NTP sync FAILED after all retries.");
+        oledShowNtpError();
+      }
+
+      // Only initialize hygrometer modules if NTP sync succeeded
+      if (ntpSynced) {
+        runningAverage_init();
+        readingCache_init();
+
+        if (sensorPoller_init()) {
+          sensorReady = true;
+          Serial.println("AHT20 sensor initialized.");
+        } else {
+          sensorReady = false;
+          Serial.println("AHT20 sensor init FAILED!");
+          oledMsg("Sensor FAILED!", "AHT20 not found", "No polling");
+        }
+      } // end if (ntpSynced)
+
       currentState = STATE_STA_MODE;
     } else {
       // Connection failed — clear credentials and reboot into AP mode
@@ -180,6 +286,63 @@ void loop() {
       }
     }
   } else if (currentState == STATE_STA_MODE) {
-    // Nothing to do — health displayed on OLED at boot
+    // Periodic NTP re-sync check (every 24 hours)
+    if (ntpSynced && ntpClient_needsResync()) {
+      Serial.println("NTP re-sync needed. Syncing...");
+      if (ntpClient_sync()) {
+        Serial.println("NTP re-sync succeeded.");
+      } else {
+        // Continue using existing time offset; retry at next opportunity
+        Serial.println("NTP re-sync failed. Will retry later.");
+      }
+    }
+
+    // Poll sensor once per second and feed into running average
+    static unsigned long lastPollTime = 0;
+    if (sensorReady && ntpSynced && (millis() - lastPollTime >= 1000)) {
+      lastPollTime = millis();
+
+      float temp_c, humidity_pct;
+      if (sensorPoller_read(temp_c, humidity_pct)) {
+        runningAverage_addSample(temp_c, humidity_pct);
+
+        // Update OLED with current averages if enough samples
+        float avg_temp_c, avg_humidity_pct;
+        if (runningAverage_get(avg_temp_c, avg_humidity_pct)) {
+          float avg_temp_f = celsiusToFahrenheit(avg_temp_c);
+          oledShowReadings(avg_temp_f, avg_humidity_pct, readingCache_count());
+        }
+      }
+    }
+
+    // Every 15 minutes: snapshot running average, cache reading, and attempt server upload
+    static unsigned long lastReportTime = 0;
+    if (sensorReady && ntpSynced && (millis() - lastReportTime >= REPORT_INTERVAL_MS)) {
+      lastReportTime = millis();
+
+      float avg_temp_c, avg_humidity_pct;
+      if (runningAverage_get(avg_temp_c, avg_humidity_pct)) {
+        // Convert to Fahrenheit and get NTP timestamp
+        float temp_f = celsiusToFahrenheit(avg_temp_c);
+        char timestamp[26];
+        ntpClient_formatISO8601(timestamp, sizeof(timestamp));
+
+        // Store in reading cache
+        readingCache_add(timestamp, temp_f, avg_humidity_pct);
+
+        // Attempt to send all cached readings to server
+        int removalCount = 0;
+        ReportResult result = serverReporter_send(removalCount);
+
+        if (result == REPORT_SUCCESS) {
+          readingCache_removeOldest(removalCount);
+          oledShowUploadSuccess(removalCount);
+        } else {
+          // Retain readings in cache for next attempt
+          oledShowUploadFailed(readingCache_count());
+        }
+      }
+      // If runningAverage_get() returns false (< 10 samples), skip this cycle
+    }
   }
 }
