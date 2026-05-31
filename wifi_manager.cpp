@@ -32,6 +32,7 @@ static void ensurePinsConfigured() {
 bool wifiManager_startAP() {
   ensurePinsConfigured();
   // Create an open (no encryption) access point with the configured SSID
+  // Note: ATWINC1500 always uses 192.168.1.1 for AP mode (firmware-controlled)
   int status = WiFi.beginAP(AP_SSID);
   return (status == WL_AP_LISTENING);
 }
