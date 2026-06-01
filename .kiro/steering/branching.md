@@ -26,7 +26,7 @@ The `main` branch is protected with the following rules:
 - **Pull request required** — No direct pushes to `main`; all changes must go through a PR
 - **Approval required** — At least 1 approving review before merge
 - **Stale reviews dismissed** — Pushing new commits invalidates previous approvals
-- **Status checks required** — The `compile-sketch` and `property-tests` CI jobs must pass before merge
+- **Status checks required** — CI jobs must pass before merge (project-specific check names)
 - **Admin bypass** — The repository owner can override status check requirements when necessary
 
 ## Release Numbering

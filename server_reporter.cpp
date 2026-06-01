@@ -45,14 +45,14 @@ ReportResult serverReporter_send(int& removalCount) {
     // Serialize readings to JSON
     // Estimate document size: base overhead + per-reading size
     size_t docCapacity = 256 + ((size_t)count * 192);
-    DynamicJsonDocument doc(docCapacity);
-    JsonArray readingsArray = doc.createNestedArray("readings");
+    JsonDocument doc;
+    JsonArray readingsArray = doc["readings"].to<JsonArray>();
 
     for (int i = 0; i < count; i++) {
         int idx = (head + i) % READING_CACHE_MAX_SIZE;
         const CachedReading& reading = readings[idx];
 
-        JsonObject entry = readingsArray.createNestedObject();
+        JsonObject entry = readingsArray.add<JsonObject>();
         entry["timestamp"] = reading.timestamp;
         entry["temperature_f"] = reading.temperature_f;
         entry["humidity_pct"] = reading.humidity_pct;
@@ -109,22 +109,34 @@ ReportResult serverReporter_send(int& removalCount) {
     response[len] = '\0';
     client.stop();
 
+    Serial.print("Response length: ");
+    Serial.println(len);
+    Serial.print("Raw response: ");
+    Serial.println(response);
+
     // Skip HTTP headers — find the blank line separating headers from body
     char* body = strstr(response, "\r\n\r\n");
     if (body == NULL) {
+        Serial.println("No header/body separator found!");
         return REPORT_PARSE_ERROR;
     }
     body += 4; // Skip past "\r\n\r\n"
 
+    Serial.print("Response body: ");
+    Serial.println(body);
+
     // Parse response JSON using the response parser logic
-    StaticJsonDocument<512> responseDoc;
+    JsonDocument responseDoc;
     DeserializationError error = deserializeJson(responseDoc, body);
 
     if (error) {
+        Serial.print("JSON parse error: ");
+        Serial.println(error.c_str());
         return REPORT_PARSE_ERROR;
     }
 
-    if (!responseDoc.containsKey("inserted_count") || !responseDoc.containsKey("skipped_count")) {
+    if (!responseDoc["inserted_count"].is<int>() || !responseDoc["skipped_count"].is<int>()) {
+        Serial.println("Missing inserted_count or skipped_count fields!");
         return REPORT_PARSE_ERROR;
     }
 

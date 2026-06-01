@@ -141,7 +141,11 @@ bool ntpSynced = false;
 void setup() {
   // Initialize serial for debug output
   Serial.begin(115200);
-  delay(100);
+  // Wait up to 3 seconds for serial monitor to connect (SAMD21 native USB)
+  unsigned long serialWait = millis();
+  while (!Serial && (millis() - serialWait < 3000)) {
+    delay(10);
+  }
 
   // Initialize OLED display
   Wire.begin();
@@ -331,15 +335,25 @@ void loop() {
         readingCache_add(timestamp, temp_f, avg_humidity_pct);
 
         // Attempt to send all cached readings to server
+        Serial.print("Uploading ");
+        Serial.print(readingCache_count());
+        Serial.println(" cached readings...");
         int removalCount = 0;
         ReportResult result = serverReporter_send(removalCount);
 
         if (result == REPORT_SUCCESS) {
+          Serial.print("Upload success. Removing ");
+          Serial.print(removalCount);
+          Serial.println(" readings from cache.");
           readingCache_removeOldest(removalCount);
           oledShowUploadSuccess(removalCount);
+          delay(1000);
         } else {
+          Serial.print("Upload FAILED. ReportResult: ");
+          Serial.println((int)result);
           // Retain readings in cache for next attempt
           oledShowUploadFailed(readingCache_count());
+          delay(1000);
         }
       }
       // If runningAverage_get() returns false (< 10 samples), skip this cycle
