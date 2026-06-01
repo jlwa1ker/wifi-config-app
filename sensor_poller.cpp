@@ -37,8 +37,8 @@ bool sensorPoller_read(float& temp_c, float& humidity_pct) {
   aht.getTemperatureSensor()->getEvent(&tempEvent);
   aht.getHumiditySensor()->getEvent(&humidityEvent);
 
-  temp_c = tempEvent.data.temperature;
-  humidity_pct = humidityEvent.data.relative_humidity;
+  temp_c = tempEvent.temperature;
+  humidity_pct = humidityEvent.relative_humidity;
 
   return true;
 }

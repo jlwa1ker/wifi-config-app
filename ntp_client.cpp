@@ -15,6 +15,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include "ntp_client.h"
+#include <Arduino.h>
 #include <WiFiUdp.h>
 #include "include/ntp_format.h"
 
