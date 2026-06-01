@@ -16,7 +16,7 @@
  */
 #include "running_average.h"
 #include <Arduino.h>
-#include "test/running_average_logic.h"
+#include "include/running_average_logic.h"
 
 // Module-level static state
 static RunningAverageState state;

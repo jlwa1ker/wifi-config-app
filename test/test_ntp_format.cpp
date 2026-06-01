@@ -5,7 +5,7 @@
 #include <string>
 #include <cstdint>
 
-#include "ntp_format.h"
+#include "include/ntp_format.h"
 
 // Epoch range: 2020-01-01T00:00:00Z to 2099-12-31T23:59:59Z
 static constexpr uint32_t EPOCH_MIN = 1577836800U;  // 2020-01-01 00:00:00 UTC

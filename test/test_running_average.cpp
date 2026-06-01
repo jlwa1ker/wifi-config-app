@@ -5,7 +5,7 @@
 #include <vector>
 #include <algorithm>
 
-#include "running_average_logic.h"
+#include "include/running_average_logic.h"
 
 /**
  * Feature: hygrometer-reporting, Property 1: Running average computes correct windowed mean

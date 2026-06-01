@@ -33,7 +33,7 @@
 #include "reading_cache.h"
 #include "ntp_client.h"
 #include "server_reporter.h"
-#include "test/temperature_convert.h"
+#include "include/temperature_convert.h"
 
 #include <Wire.h>
 #include <Adafruit_GFX.h>

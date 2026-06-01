@@ -2,7 +2,7 @@
 #include <rapidcheck.h>
 #include <cmath>
 
-#include "temperature_convert.h"
+#include "include/temperature_convert.h"
 
 /**
  * Feature: hygrometer-reporting, Property 8: Celsius to Fahrenheit conversion with rounding

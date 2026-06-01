@@ -16,7 +16,7 @@
  */
 #include "ntp_client.h"
 #include <WiFiUdp.h>
-#include "test/ntp_format.h"
+#include "include/ntp_format.h"
 
 // NTP server and port
 static const char* NTP_SERVER = "pool.ntp.org";
