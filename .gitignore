@@ -17,4 +17,8 @@ Thumbs.db
 .pio/
 
 # Test build artifacts
-test/build/
+test/build*/
+build_output.txt
+
+# External dependencies fetched during test builds
+ext/
