@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/ext/catch" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/ext/googletest" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build/_deps/arduinojson-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build/_deps/catch2-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build/_deps/rapidcheck-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build/_deps/rapidcheck-src/ext/catch" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build/_deps/rapidcheck-src/ext/googletest" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build2/_deps/arduinojson-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build2/_deps/catch2-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build2/_deps/rapidcheck-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build2/_deps/rapidcheck-src/ext/catch" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build2/_deps/rapidcheck-src/ext/googletest" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build3/_deps/arduinojson-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build3/_deps/catch2-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build3/_deps/rapidcheck-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build3/_deps/rapidcheck-src/ext/catch" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build3/_deps/rapidcheck-src/ext/googletest" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build4/_deps/arduinojson-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build4/_deps/catch2-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build4/_deps/rapidcheck-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build4/_deps/rapidcheck-src/ext/catch" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build4/_deps/rapidcheck-src/ext/googletest" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build_verify/_deps/arduinojson-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build_verify/_deps/catch2-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build_verify/_deps/rapidcheck-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build_verify/_deps/rapidcheck-src/ext/catch" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build_verify/_deps/rapidcheck-src/ext/googletest" vcs="Git" />
+  </component>
+</project>
