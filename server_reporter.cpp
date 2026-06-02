@@ -24,6 +24,10 @@
 // Static WiFiClient instance for HTTP POST
 static WiFiClient client;
 
+// Cached IP address for the ingest host (resolved once at first use)
+static IPAddress cachedIngestIP;
+static bool ipResolved = false;
+
 // JSON serialization buffer (sized for up to 96 readings)
 // Each reading is ~100 bytes in JSON; 96 * 100 + overhead ≈ 10KB
 // Use a smaller working buffer and serialize in chunks if needed
@@ -31,6 +35,9 @@ static WiFiClient client;
 
 ReportResult serverReporter_send(int& removalCount) {
     removalCount = 0;
+
+    // Ensure clean client state from any previous attempt
+    client.stop();
 
     // Get all cached readings
     int count = 0;
@@ -62,16 +69,22 @@ ReportResult serverReporter_send(int& removalCount) {
     // Measure serialized size
     size_t jsonLength = measureJson(doc);
 
-    // Resolve DNS before connecting (WiFi101 hostname connect can be unreliable)
-    IPAddress resolvedIP;
-    if (WiFi.hostByName(INGEST_HOST, resolvedIP) != 1) {
-        Serial.println("DNS resolution failed for ingest host.");
-        return REPORT_CONNECT_FAILED;
+    // Resolve DNS once and cache the IP for subsequent requests
+    if (!ipResolved) {
+        if (WiFi.hostByName(INGEST_HOST, cachedIngestIP) != 1) {
+            Serial.println("DNS resolution failed for ingest host.");
+            return REPORT_CONNECT_FAILED;
+        }
+        ipResolved = true;
+        Serial.print("Resolved ingest host to: ");
+        Serial.println(cachedIngestIP);
     }
 
-    // Connect to server by resolved IP
-    if (!client.connect(resolvedIP, INGEST_PORT)) {
+    // Connect to server by cached IP
+    if (!client.connect(cachedIngestIP, INGEST_PORT)) {
         Serial.println("TCP connect failed.");
+        // Reset cached IP in case it went stale
+        ipResolved = false;
         return REPORT_CONNECT_FAILED;
     }
 
