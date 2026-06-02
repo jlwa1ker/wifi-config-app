@@ -62,8 +62,16 @@ ReportResult serverReporter_send(int& removalCount) {
     // Measure serialized size
     size_t jsonLength = measureJson(doc);
 
-    // Connect to server
-    if (!client.connect(INGEST_HOST, INGEST_PORT)) {
+    // Resolve DNS before connecting (WiFi101 hostname connect can be unreliable)
+    IPAddress resolvedIP;
+    if (WiFi.hostByName(INGEST_HOST, resolvedIP) != 1) {
+        Serial.println("DNS resolution failed for ingest host.");
+        return REPORT_CONNECT_FAILED;
+    }
+
+    // Connect to server by resolved IP
+    if (!client.connect(resolvedIP, INGEST_PORT)) {
+        Serial.println("TCP connect failed.");
         return REPORT_CONNECT_FAILED;
     }
 
