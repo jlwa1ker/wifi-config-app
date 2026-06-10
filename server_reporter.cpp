@@ -24,10 +24,6 @@
 // Static WiFiClient instance for HTTP POST
 static WiFiClient client;
 
-// Cached IP address for the ingest host (resolved once at first use)
-static IPAddress cachedIngestIP;
-static bool ipResolved = false;
-
 // JSON serialization buffer (sized for up to 96 readings)
 // Each reading is ~100 bytes in JSON; 96 * 100 + overhead ≈ 10KB
 // Use a smaller working buffer and serialize in chunks if needed
@@ -69,23 +65,16 @@ ReportResult serverReporter_send(int& removalCount) {
     // Measure serialized size
     size_t jsonLength = measureJson(doc);
 
-    // Resolve DNS once and cache the IP for subsequent requests
-    if (!ipResolved) {
-        if (WiFi.hostByName(INGEST_HOST, cachedIngestIP) != 1) {
-            Serial.println("DNS resolution failed for ingest host.");
+    // Connect to server by hardcoded IP (WiFi101 DNS is broken after first use)
+    // ALB IPs for tempmon.walkerweb.us - will need Elastic IP for production
+    IPAddress ingestIP(34, 205, 151, 207);
+    if (!client.connect(ingestIP, INGEST_PORT)) {
+        // Try secondary ALB IP
+        IPAddress ingestIP2(3, 208, 171, 218);
+        if (!client.connect(ingestIP2, INGEST_PORT)) {
+            Serial.println("Connect failed (both IPs).");
             return REPORT_CONNECT_FAILED;
         }
-        ipResolved = true;
-        Serial.print("Resolved ingest host to: ");
-        Serial.println(cachedIngestIP);
-    }
-
-    // Connect to server by cached IP
-    if (!client.connect(cachedIngestIP, INGEST_PORT)) {
-        Serial.println("TCP connect failed.");
-        // Reset cached IP in case it went stale
-        ipResolved = false;
-        return REPORT_CONNECT_FAILED;
     }
 
     // Send HTTP POST request (HTTP/1.0 for simpler response handling)
