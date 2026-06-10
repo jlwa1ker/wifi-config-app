@@ -32,6 +32,9 @@ static WiFiClient client;
 ReportResult serverReporter_send(int& removalCount) {
     removalCount = 0;
 
+    // Ensure clean client state from any previous attempt
+    client.stop();
+
     // Get all cached readings
     int count = 0;
     int head = 0;
