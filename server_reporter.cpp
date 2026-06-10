@@ -62,17 +62,16 @@ ReportResult serverReporter_send(int& removalCount) {
     // Measure serialized size
     size_t jsonLength = measureJson(doc);
 
-    // Resolve DNS before connecting (WiFi101 hostname connect can be unreliable)
-    IPAddress resolvedIP;
-    if (WiFi.hostByName(INGEST_HOST, resolvedIP) != 1) {
-        Serial.println("DNS resolution failed for ingest host.");
-        return REPORT_CONNECT_FAILED;
-    }
-
-    // Connect to server by resolved IP
-    if (!client.connect(resolvedIP, INGEST_PORT)) {
-        Serial.println("TCP connect failed.");
-        return REPORT_CONNECT_FAILED;
+    // Connect to server by hardcoded IP (WiFi101 DNS is broken after first use)
+    // ALB IPs for tempmon.walkerweb.us - will need Elastic IP for production
+    IPAddress ingestIP(34, 205, 151, 207);
+    if (!client.connect(ingestIP, INGEST_PORT)) {
+        // Try secondary ALB IP
+        IPAddress ingestIP2(3, 208, 171, 218);
+        if (!client.connect(ingestIP2, INGEST_PORT)) {
+            Serial.println("Connect failed (both IPs).");
+            return REPORT_CONNECT_FAILED;
+        }
     }
 
     // Send HTTP POST request (HTTP/1.0 for simpler response handling)
