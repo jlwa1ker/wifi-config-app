@@ -40,12 +40,14 @@ bool credentialStore_read(WiFiCredentials& creds) {
   return true;
 }
 
-bool credentialStore_write(const char* ssid, const char* password) {
+bool credentialStore_write(const char* ssid, const char* password, const char* location) {
   cachedCredentials.valid = true;
   strncpy(cachedCredentials.ssid, ssid, MAX_SSID_LENGTH);
   cachedCredentials.ssid[MAX_SSID_LENGTH] = '\0';
   strncpy(cachedCredentials.password, password, MAX_PASS_LENGTH);
   cachedCredentials.password[MAX_PASS_LENGTH] = '\0';
+  strncpy(cachedCredentials.location, location, MAX_LOCATION_LENGTH);
+  cachedCredentials.location[MAX_LOCATION_LENGTH] = '\0';
   flash_store.write(cachedCredentials);
   return true;
 }

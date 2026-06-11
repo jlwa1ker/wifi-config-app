@@ -20,9 +20,10 @@
 #include "config.h"
 
 struct WiFiCredentials {
-  bool valid;                       // Validity flag
-  char ssid[MAX_SSID_LENGTH + 1];  // Null-terminated SSID
-  char password[MAX_PASS_LENGTH + 1]; // Null-terminated password
+  bool valid;                           // Validity flag
+  char ssid[MAX_SSID_LENGTH + 1];      // Null-terminated SSID
+  char password[MAX_PASS_LENGTH + 1];   // Null-terminated password
+  char location[MAX_LOCATION_LENGTH + 1]; // Null-terminated location
 };
 
 // Initialize the credential store
@@ -35,7 +36,7 @@ bool credentialStore_hasCredentials();
 bool credentialStore_read(WiFiCredentials& creds);
 
 // Write credentials to flash. Returns true on success.
-bool credentialStore_write(const char* ssid, const char* password);
+bool credentialStore_write(const char* ssid, const char* password, const char* location);
 
 // Clear stored credentials (sets valid flag to false)
 void credentialStore_clear();

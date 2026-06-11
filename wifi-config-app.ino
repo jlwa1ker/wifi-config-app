@@ -192,6 +192,7 @@ void setup() {
       Serial.print("Connected! IP: ");
       Serial.println(wifiManager_getIP());
 
+      
       char ipStr[20];
       IPAddress ip = wifiManager_getIP();
       snprintf(ipStr, sizeof(ipStr), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
@@ -271,7 +272,8 @@ void loop() {
     if (webServer_hasSubmission()) {
       char ssid[MAX_SSID_LENGTH + 1];
       char password[MAX_PASS_LENGTH + 1];
-      webServer_getSubmission(ssid, password);
+      char location[MAX_LOCATION_LENGTH + 1];
+      webServer_getSubmission(ssid, password, location);
 
       Serial.print("Credentials received for: ");
       Serial.println(ssid);
@@ -280,7 +282,7 @@ void loop() {
       // Save credentials to flash and reboot.
       // WiFi101 cannot do beginAP() then begin() in the same session,
       // so we save first and attempt connection on the next boot.
-      if (credentialStore_write(ssid, password)) {
+      if (credentialStore_write(ssid, password, location)) {
         Serial.println("Credentials saved. Rebooting to connect...");
         delay(500);
         NVIC_SystemReset();

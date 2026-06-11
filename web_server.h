@@ -43,7 +43,8 @@ bool webServer_wasRequestServed();
 bool webServer_hasSubmission();
 
 // Retrieve the submitted credentials and clear the submission flag.
-// Buffers must be at least MAX_SSID_LENGTH+1 and MAX_PASS_LENGTH+1 bytes.
-void webServer_getSubmission(char* ssid, char* password);
+// Buffers must be at least MAX_SSID_LENGTH+1, MAX_PASS_LENGTH+1,
+// and MAX_LOCATION_LENGTH+1 bytes respectively.
+void webServer_getSubmission(char* ssid, char* password, char* location);
 
 #endif

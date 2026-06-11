@@ -40,4 +40,10 @@ enum ReportResult {
  */
 ReportResult serverReporter_send(int& removalCount);
 
+/**
+ * Retrieve the device location string from stored credentials.
+ * Returns a pointer to a module-level buffer (valid for the lifetime of the program).
+ */
+const char* serverReporter_getLocation();
+
 #endif

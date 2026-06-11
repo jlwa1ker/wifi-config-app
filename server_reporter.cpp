@@ -16,10 +16,27 @@
  */
 #include "server_reporter.h"
 #include "reading_cache.h"
+#include "credential_store.h"
 #include "config.h"
 #include <WiFi101.h>
 #include <ArduinoJson.h>
 #include <string.h>
+
+// Module-level location buffer, populated from credential store
+static char storedLocation[MAX_LOCATION_LENGTH + 1] = "";
+
+// Retrieve the device location from stored credentials.
+// Call after credentialStore_init() and a successful read.
+const char* serverReporter_getLocation() {
+  if (storedLocation[0] == '\0') {
+    WiFiCredentials creds;
+    if (credentialStore_read(creds)) {
+      strncpy(storedLocation, creds.location, MAX_LOCATION_LENGTH);
+      storedLocation[MAX_LOCATION_LENGTH] = '\0';
+    }
+  }
+  return storedLocation;
+}
 
 // Static WiFiClient instance for HTTP POST
 static WiFiClient client;
@@ -59,7 +76,7 @@ ReportResult serverReporter_send(int& removalCount) {
         entry["timestamp"] = reading.timestamp;
         entry["temperature_f"] = reading.temperature_f;
         entry["humidity_pct"] = reading.humidity_pct;
-        entry["location"] = DEVICE_LOCATION;
+        entry["location"] = serverReporter_getLocation();
     }
 
     // Measure serialized size
