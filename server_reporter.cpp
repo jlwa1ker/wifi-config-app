@@ -16,10 +16,27 @@
  */
 #include "server_reporter.h"
 #include "reading_cache.h"
+#include "credential_store.h"
 #include "config.h"
 #include <WiFi101.h>
 #include <ArduinoJson.h>
 #include <string.h>
+
+// Module-level location buffer, populated from credential store
+static char storedLocation[MAX_LOCATION_LENGTH + 1] = "";
+
+// Retrieve the device location from stored credentials.
+// Call after credentialStore_init() and a successful read.
+const char* serverReporter_getLocation() {
+  if (storedLocation[0] == '\0') {
+    WiFiCredentials creds;
+    if (credentialStore_read(creds)) {
+      strncpy(storedLocation, creds.location, MAX_LOCATION_LENGTH);
+      storedLocation[MAX_LOCATION_LENGTH] = '\0';
+    }
+  }
+  return storedLocation;
+}
 
 // Static WiFiClient instance for HTTP POST
 static WiFiClient client;
@@ -31,6 +48,9 @@ static WiFiClient client;
 
 ReportResult serverReporter_send(int& removalCount) {
     removalCount = 0;
+
+    // Ensure clean client state from any previous attempt
+    client.stop();
 
     // Get all cached readings
     int count = 0;
@@ -56,23 +76,22 @@ ReportResult serverReporter_send(int& removalCount) {
         entry["timestamp"] = reading.timestamp;
         entry["temperature_f"] = reading.temperature_f;
         entry["humidity_pct"] = reading.humidity_pct;
-        entry["location"] = DEVICE_LOCATION;
+        entry["location"] = serverReporter_getLocation();
     }
 
     // Measure serialized size
     size_t jsonLength = measureJson(doc);
 
-    // Resolve DNS before connecting (WiFi101 hostname connect can be unreliable)
-    IPAddress resolvedIP;
-    if (WiFi.hostByName(INGEST_HOST, resolvedIP) != 1) {
-        Serial.println("DNS resolution failed for ingest host.");
-        return REPORT_CONNECT_FAILED;
-    }
-
-    // Connect to server by resolved IP
-    if (!client.connect(resolvedIP, INGEST_PORT)) {
-        Serial.println("TCP connect failed.");
-        return REPORT_CONNECT_FAILED;
+    // Connect to server by hardcoded IP (WiFi101 DNS is broken after first use)
+    // ALB IPs for tempmon.walkerweb.us - will need Elastic IP for production
+    IPAddress ingestIP(34, 205, 151, 207);
+    if (!client.connect(ingestIP, INGEST_PORT)) {
+        // Try secondary ALB IP
+        IPAddress ingestIP2(3, 208, 171, 218);
+        if (!client.connect(ingestIP2, INGEST_PORT)) {
+            Serial.println("Connect failed (both IPs).");
+            return REPORT_CONNECT_FAILED;
+        }
     }
 
     // Send HTTP POST request (HTTP/1.0 for simpler response handling)

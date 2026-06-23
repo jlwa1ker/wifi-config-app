@@ -37,10 +37,11 @@ static bool landingPageServed = false;
 static bool submissionReady = false;
 static char submittedSSID[MAX_SSID_LENGTH + 1];
 static char submittedPassword[MAX_PASS_LENGTH + 1];
+static char submittedLocation[MAX_LOCATION_LENGTH + 1];
 
 // Forward declarations for internal helpers
 static void urlDecode(const char* src, char* dst, int dstSize);
-static void parseFormBody(const char* body, char* ssid, int ssidSize, char* password, int passSize);
+static void parseFormBody(const char* body, char* ssid, int ssidSize, char* password, int passSize, char* location, int locationSize);
 static void sendConfigFormResponse(WiFiClient& client);
 static void sendLandingPageResponse(WiFiClient& client);
 static void sendErrorResponse(WiFiClient& client, int statusCode, const char* message);
@@ -162,7 +163,8 @@ void webServer_poll() {
     if (strcmp(method, "POST") == 0 && strcmp(path, "/submit") == 0) {
       // Parse form submission
       parseFormBody(body, submittedSSID, sizeof(submittedSSID),
-                    submittedPassword, sizeof(submittedPassword));
+                    submittedPassword, sizeof(submittedPassword),
+                    submittedLocation, sizeof(submittedLocation));
       submissionReady = true;
 
       // Send a brief acknowledgment response
@@ -233,9 +235,10 @@ bool webServer_hasSubmission() {
   return submissionReady;
 }
 
-void webServer_getSubmission(char* ssid, char* password) {
+void webServer_getSubmission(char* ssid, char* password, char* location) {
   strncpy(ssid, submittedSSID, MAX_SSID_LENGTH + 1);
   strncpy(password, submittedPassword, MAX_PASS_LENGTH + 1);
+  strncpy(location, submittedLocation, MAX_LOCATION_LENGTH + 1);
   submissionReady = false;
 }
 
@@ -269,12 +272,13 @@ static void urlDecode(const char* src, char* dst, int dstSize) {
   dst[di] = '\0';
 }
 
-static void parseFormBody(const char* body, char* ssid, int ssidSize, char* password, int passSize) {
+static void parseFormBody(const char* body, char* ssid, int ssidSize, char* password, int passSize, char* location, int locationSize) {
   // Initialize outputs
   ssid[0] = '\0';
   password[0] = '\0';
+  location[0] = '\0';
 
-  // Parse "ssid=value&password=value" format
+  // Parse "ssid=value&password=value&location=value" format
   const char* ptr = body;
   while (*ptr != '\0') {
     // Find the key
@@ -308,6 +312,8 @@ static void parseFormBody(const char* body, char* ssid, int ssidSize, char* pass
       urlDecode(rawValue, ssid, ssidSize);
     } else if (keyLen == 8 && strncmp(ptr, "password", 8) == 0) {
       urlDecode(rawValue, password, passSize);
+    } else if (keyLen == 8 && strncmp(ptr, "location", 8) == 0) {
+      urlDecode(rawValue, location, locationSize);
     }
 
     // Advance past this key=value pair
@@ -323,6 +329,30 @@ static void sendConfigFormResponse(WiFiClient& client) {
   // Defensive check: if client is not connected, we cannot send a response
   if (!client.connected()) {
     return;
+  }
+
+  // Scan for nearby WiFi networks
+  int numNetworks = WiFi.scanNetworks();
+
+  // Sort by RSSI (strongest first) using selection sort, take top 10
+  int sortedIndices[10];
+  int sortedCount = (numNetworks < 10) ? numNetworks : 10;
+  bool used[256];
+  memset(used, false, (numNetworks < 256) ? numNetworks : 256);
+
+  for (int i = 0; i < sortedCount; i++) {
+    int bestIdx = -1;
+    int32_t bestRSSI = -9999;
+    for (int j = 0; j < numNetworks; j++) {
+      if (!used[j] && WiFi.RSSI(j) > bestRSSI) {
+        bestRSSI = WiFi.RSSI(j);
+        bestIdx = j;
+      }
+    }
+    if (bestIdx >= 0) {
+      sortedIndices[i] = bestIdx;
+      used[bestIdx] = true;
+    }
   }
 
   client.println("HTTP/1.1 200 OK");
@@ -358,9 +388,21 @@ static void sendConfigFormResponse(WiFiClient& client) {
 
   client.println("<form method=\"POST\" action=\"/submit\">");
   client.println("<label for=\"ssid\">Network Name (SSID)</label>");
-  client.println("<input type=\"text\" id=\"ssid\" name=\"ssid\" required>");
+  client.println("<input type=\"text\" id=\"ssid\" name=\"ssid\" list=\"ssid-list\" required>");
+
+  // Generate datalist with scanned SSIDs
+  client.println("<datalist id=\"ssid-list\">");
+  for (int i = 0; i < sortedCount; i++) {
+    client.print("<option value=\"");
+    client.print(WiFi.SSID(sortedIndices[i]));
+    client.println("\">");
+  }
+  client.println("</datalist>");
+
   client.println("<label for=\"password\">Password</label>");
   client.println("<input type=\"password\" id=\"password\" name=\"password\">");
+  client.println("<label for=\"location\">Location</label>");
+  client.println("<input type=\"text\" id=\"location\" name=\"location\" required>");
   client.println("<button type=\"submit\">Connect</button>");
   client.println("</form>");
   client.println("</body>");
