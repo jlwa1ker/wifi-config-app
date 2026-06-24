@@ -19,6 +19,7 @@
 
 // Access Point settings
 const char* const AP_SSID = "tempmon";
+const char* const AP_ADDRESS = "10.0.0.9";
 const int WEB_SERVER_PORT = 80;
 
 // WiFi connection

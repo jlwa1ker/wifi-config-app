@@ -171,7 +171,10 @@ void setup() {
     Serial.print("AP start result: ");
     Serial.println(apResult ? "SUCCESS" : "FAILED");
     if (apResult) {
-      oledMsg("AP Mode", "SSID: tempmon", "http://192.168.1.1");
+      char urlStr[30];
+      IPAddress ip = wifiManager_getIP();
+      snprintf(urlStr, sizeof(urlStr), "http://%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+      oledMsg("AP Mode", "SSID: tempmon", urlStr);
     } else {
       oledMsg("AP FAILED!");
     }
