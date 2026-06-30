@@ -192,6 +192,7 @@ void setup() {
 
     if (wifiManager_connect(creds.ssid, creds.password)) {
       // Connection succeeded — enter STA mode
+      credentialStore_resetRetry();
       Serial.print("Connected! IP: ");
       Serial.println(wifiManager_getIP());
 
@@ -240,11 +241,23 @@ void setup() {
 
       currentState = STATE_STA_MODE;
     } else {
-      // Connection failed — clear credentials and reboot into AP mode
-      // (WiFi101 cannot transition STA→AP without a hardware reset)
-      Serial.println("Connection failed. Clearing credentials and rebooting...");
-      oledMsg("Connect FAILED", creds.ssid, "Clearing & reboot");
-      credentialStore_clear();
+      // Connection failed — increment retry counter and reboot
+      uint8_t retries = credentialStore_incrementRetry();
+      Serial.print("Connection failed. Retry count: ");
+      Serial.println(retries);
+
+      if (retries >= MAX_WIFI_RETRIES) {
+        // Too many failures — clear credentials and enter AP mode on next boot
+        Serial.println("Max retries reached. Clearing credentials.");
+        oledMsg("Connect FAILED", "Max retries", "Clearing & reboot");
+        credentialStore_clear();
+      } else {
+        // Reboot and try again (credentials preserved)
+        char retryMsg[22];
+        snprintf(retryMsg, sizeof(retryMsg), "Retry %d/%d", retries, MAX_WIFI_RETRIES);
+        oledMsg("Connect FAILED", creds.ssid, retryMsg);
+      }
+
       delay(2000);
       NVIC_SystemReset();
     }

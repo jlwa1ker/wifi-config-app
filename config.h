@@ -43,5 +43,6 @@ const unsigned long INGEST_RESPONSE_TIMEOUT_MS = 10000;
 const int MAX_SSID_LENGTH = 32;
 const int MAX_PASS_LENGTH = 64;
 const int MAX_LOCATION_LENGTH = 32;
+const int MAX_WIFI_RETRIES = 10;
 
 #endif

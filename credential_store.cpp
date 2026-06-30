@@ -42,6 +42,7 @@ bool credentialStore_read(WiFiCredentials& creds) {
 
 bool credentialStore_write(const char* ssid, const char* password, const char* location) {
   cachedCredentials.valid = true;
+  cachedCredentials.retryCount = 0;
   strncpy(cachedCredentials.ssid, ssid, MAX_SSID_LENGTH);
   cachedCredentials.ssid[MAX_SSID_LENGTH] = '\0';
   strncpy(cachedCredentials.password, password, MAX_PASS_LENGTH);
@@ -54,5 +55,23 @@ bool credentialStore_write(const char* ssid, const char* password, const char* l
 
 void credentialStore_clear() {
   cachedCredentials.valid = false;
+  cachedCredentials.retryCount = 0;
   flash_store.write(cachedCredentials);
+}
+
+uint8_t credentialStore_incrementRetry() {
+  cachedCredentials.retryCount++;
+  flash_store.write(cachedCredentials);
+  return cachedCredentials.retryCount;
+}
+
+void credentialStore_resetRetry() {
+  if (cachedCredentials.retryCount != 0) {
+    cachedCredentials.retryCount = 0;
+    flash_store.write(cachedCredentials);
+  }
+}
+
+uint8_t credentialStore_getRetryCount() {
+  return cachedCredentials.retryCount;
 }
