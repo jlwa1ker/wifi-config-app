@@ -40,18 +40,141 @@
 #include <Adafruit_SSD1306.h>
 
 #define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 32
+
+
+
+
+#define SCREEN_HEIGHT 64
 #define OLED_RESET -1
 #define OLED_ADDR 0x3C
 
+// Status bar constants
+#define STATUS_BAR_HEIGHT 16
+#define CONTENT_Y_START 16  // Blue area starts after yellow (16px) + gap
+
+// Battery reading pin (Feather M0 voltage divider on A7)
+#define VBAT_PIN A7
+
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-// Helper to show a message on the OLED
-void oledMsg(const char* line1, const char* line2 = "", const char* line3 = "") {
-  display.clearDisplay();
+// Current display state code for the status bar
+static const char* currentStateCode = "BOT";
+
+// --- Status Bar Drawing Functions ---
+
+// Get WiFi signal strength as 0-3 bars
+static int getWifiBars() {
+  // Don't call WiFi library during boot — it hasn't been initialized yet
+  if (strcmp(currentStateCode, "BOT") == 0) {
+    return 0;
+  }
+  int status = WiFi.status();
+  if (status == WL_AP_LISTENING || status == WL_AP_CONNECTED) {
+    return 3; // Full bars in AP mode
+  }
+  if (status != WL_CONNECTED) {
+    return 0;
+  }
+  int32_t rssi = WiFi.RSSI();
+  if (rssi > -50) return 3;
+  if (rssi > -70) return 2;
+  return 1;
+}
+
+// Draw WiFi signal icon at (x, y) within a 16x16 area
+static void drawWifiIcon(int x, int y, int bars) {
+  // Bar widths: 3px each, 1px gap, heights: 4, 8, 12
+  int barX = x + 2;
+  if (bars >= 1) {
+    display.fillRect(barX, y + 10, 3, 4, SSD1306_WHITE);  // short bar
+  } else {
+    display.drawRect(barX, y + 10, 3, 4, SSD1306_WHITE);
+  }
+  barX += 4;
+  if (bars >= 2) {
+    display.fillRect(barX, y + 6, 3, 8, SSD1306_WHITE);  // medium bar
+  } else {
+    display.drawRect(barX, y + 6, 3, 8, SSD1306_WHITE);
+  }
+  barX += 4;
+  if (bars >= 3) {
+    display.fillRect(barX, y + 2, 3, 12, SSD1306_WHITE); // tall bar
+  } else {
+    display.drawRect(barX, y + 2, 3, 12, SSD1306_WHITE);
+  }
+}
+
+// Get battery voltage in volts
+static float getBatteryVoltage() {
+  int raw = analogRead(VBAT_PIN);
+  return raw * 2.0f * 3.3f / 1024.0f;
+}
+
+// Draw battery icon at (x, y) within a 16x16 area
+// Shows charging bolt when on USB (> 4.1V), otherwise 3-level fill
+static void drawBatteryIcon(int x, int y) {
+  float voltage = getBatteryVoltage();
+  bool charging = (voltage > 4.1f);
+
+  // Battery outline: 12x8 body + 2x4 tip
+  int bx = x + 1;
+  int by = y + 4;
+  display.drawRect(bx, by, 12, 8, SSD1306_WHITE);       // body
+  display.fillRect(bx + 12, by + 2, 2, 4, SSD1306_WHITE); // tip
+
+  if (charging) {
+    // Draw a lightning bolt inside
+    display.drawLine(bx + 6, by + 1, bx + 4, by + 4, SSD1306_WHITE);
+    display.drawLine(bx + 4, by + 4, bx + 7, by + 4, SSD1306_WHITE);
+    display.drawLine(bx + 7, by + 4, bx + 5, by + 7, SSD1306_WHITE);
+  } else {
+    // Fill level based on voltage (3.3V=empty, 4.2V=full)
+    int level;
+    if (voltage > 3.9f) level = 3;
+    else if (voltage > 3.6f) level = 2;
+    else level = 1;
+
+    int fillWidth = level * 3;  // 3, 6, or 9 pixels wide
+    if (fillWidth > 0) {
+      display.fillRect(bx + 1, by + 1, fillWidth, 6, SSD1306_WHITE);
+    }
+  }
+}
+
+// Draw the full status bar in the yellow area (top 16px)
+void drawStatusBar() {
+  // Clear only the status bar area
+  display.fillRect(0, 0, SCREEN_WIDTH, STATUS_BAR_HEIGHT, SSD1306_BLACK);
+
+  // 1. WiFi icon (far left, 16px wide)
+  int bars = getWifiBars();
+  drawWifiIcon(0, 0, bars);
+
+  // 2. State code (3 chars, after WiFi icon)
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
+  display.setCursor(18, 4);
+  display.print(currentStateCode);
+
+  // 3. Cache count (2 digits, right of center)
+  int cacheCount = readingCache_count();
+  if (cacheCount > 99) cacheCount = 99;
+  char cacheStr[4];
+  snprintf(cacheStr, sizeof(cacheStr), "%2d", cacheCount);
+  display.setCursor(96, 4);
+  display.print(cacheStr);
+
+  // 4. Battery icon (far right, 16px wide)
+  drawBatteryIcon(112, 0);
+}
+
+// Helper to show a message on the OLED (blue area, 3 lines)
+void oledMsg(const char* line1, const char* line2 = "", const char* line3 = "") {
+  display.clearDisplay();
+  drawStatusBar();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, CONTENT_Y_START);
   display.println(line1);
   if (line2[0]) display.println(line2);
   if (line3[0]) display.println(line3);
@@ -61,9 +184,11 @@ void oledMsg(const char* line1, const char* line2 = "", const char* line3 = "") 
 // Show current sensor averages and cache count (STA mode)
 void oledShowReadings(float temp_f, float humidity_pct, int cacheCount) {
   display.clearDisplay();
+  currentStateCode = "RUN";
+  drawStatusBar();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
+  display.setCursor(0, CONTENT_Y_START);
 
   char line1[22];
   snprintf(line1, sizeof(line1), "Temp: %.1f F", (double)temp_f);
@@ -73,19 +198,17 @@ void oledShowReadings(float temp_f, float humidity_pct, int cacheCount) {
   snprintf(line2, sizeof(line2), "Hum:  %.1f %%", (double)humidity_pct);
   display.println(line2);
 
-  char line3[22];
-  snprintf(line3, sizeof(line3), "Cache: %d readings", cacheCount);
-  display.println(line3);
-
   display.display();
 }
 
 // Show upload success indicator
 void oledShowUploadSuccess(int sentCount) {
   display.clearDisplay();
+  currentStateCode = "UPS";
+  drawStatusBar();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
+  display.setCursor(0, CONTENT_Y_START);
   display.println("Upload OK!");
 
   char line2[22];
@@ -98,9 +221,11 @@ void oledShowUploadSuccess(int sentCount) {
 // Show upload failure indicator with pending cache count
 void oledShowUploadFailed(int cacheCount) {
   display.clearDisplay();
+  currentStateCode = "UPE";
+  drawStatusBar();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
+  display.setCursor(0, CONTENT_Y_START);
   display.println("Upload FAILED!");
 
   char line2[22];
@@ -113,9 +238,11 @@ void oledShowUploadFailed(int cacheCount) {
 // Show NTP synchronization error
 void oledShowNtpError() {
   display.clearDisplay();
+  currentStateCode = "NTE";
+  drawStatusBar();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
+  display.setCursor(0, CONTENT_Y_START);
   display.println("NTP Sync FAILED!");
   display.println("No time source.");
   display.println("Retrying...");
@@ -180,6 +307,7 @@ void setup() {
     }
     webServer_init(WEB_SERVER_PORT);
     webServer_setMode(MODE_CONFIG_FORM);
+    currentStateCode = "CFG";
     currentState = STATE_AP_MODE;
   } else {
     // Credentials exist — attempt to connect to the stored network
@@ -189,6 +317,7 @@ void setup() {
     Serial.print("Credentials found. Connecting to: ");
     Serial.println(creds.ssid);
     oledMsg("Creds found", creds.ssid, "Connecting...");
+    currentStateCode = "CTG";
 
     if (wifiManager_connect(creds.ssid, creds.password)) {
       // Connection succeeded — enter STA mode
@@ -214,6 +343,7 @@ void setup() {
 
       // Synchronize clock via NTP before starting sensor/reporting loop.
       // Readings require accurate timestamps, so NTP must succeed first.
+      currentStateCode = "NTP";
       oledMsg("NTP Sync", "Contacting server...");
       if (ntpClient_sync()) {
         ntpSynced = true;
@@ -231,9 +361,11 @@ void setup() {
 
         if (sensorPoller_init()) {
           sensorReady = true;
+          currentStateCode = "RUN";
           Serial.println("AHT20 sensor initialized.");
         } else {
           sensorReady = false;
+          currentStateCode = "ERR";
           Serial.println("AHT20 sensor init FAILED!");
           oledMsg("Sensor FAILED!", "AHT20 not found", "No polling");
         }
@@ -242,6 +374,7 @@ void setup() {
       currentState = STATE_STA_MODE;
     } else {
       // Connection failed — increment retry counter and reboot
+      currentStateCode = "RTR";
       uint8_t retries = credentialStore_incrementRetry();
       Serial.print("Connection failed. Retry count: ");
       Serial.println(retries);
