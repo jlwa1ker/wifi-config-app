@@ -55,6 +55,9 @@
 // Battery reading pin (Feather M0 voltage divider on A7)
 #define VBAT_PIN A7
 
+// USB power detection pin (voltage divider from VBUS on digital pin 9)
+#define USB_DETECT_PIN 9
+
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // Current display state code for the status bar
@@ -111,10 +114,13 @@ static float getBatteryVoltage() {
 }
 
 // Draw battery icon at (x, y) within a 16x16 area
-// Shows charging bolt when on USB (> 4.1V), otherwise 3-level fill
+// Shows charging bolt when USB power detected (pin 10), otherwise battery level
 static void drawBatteryIcon(int x, int y) {
   float voltage = getBatteryVoltage();
-  bool charging = (voltage > 4.1f);
+
+  // Read USB VBUS via analog pin 9 (voltage divider gives 0-2.5V)
+  float usbVoltage = analogRead(USB_DETECT_PIN) * 3.3f / 1024.0f;
+  bool charging = (usbVoltage > 2.3f);
 
   // Battery outline: 12x8 body + 2x4 tip
   int bx = x + 1;
@@ -135,9 +141,7 @@ static void drawBatteryIcon(int x, int y) {
     else level = 1;
 
     int fillWidth = level * 3;  // 3, 6, or 9 pixels wide
-    if (fillWidth > 0) {
-      display.fillRect(bx + 1, by + 1, fillWidth, 6, SSD1306_WHITE);
-    }
+    display.fillRect(bx + 1, by + 1, fillWidth, 6, SSD1306_WHITE);
   }
 }
 
