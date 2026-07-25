@@ -269,6 +269,9 @@ bool sensorReady = false;
 // When false, the reporting loop will not run (no valid timestamps).
 bool ntpSynced = false;
 
+// Reporting timer — initialized after NTP sync to align to clock boundaries
+unsigned long lastReportTime = 0;
+
 void setup() {
   // Initialize serial for debug output
   Serial.begin(115200);
@@ -352,6 +355,24 @@ void setup() {
       if (ntpClient_sync()) {
         ntpSynced = true;
         Serial.println("NTP sync succeeded.");
+
+        // Calculate delay to next clock-aligned reporting slot
+        unsigned long epoch = ntpClient_getEpoch();
+        unsigned long secondsSinceMidnight = epoch % 86400UL;
+        unsigned long minutesSinceMidnight = secondsSinceMidnight / 60;
+        unsigned long frequencyMinutes = REPORT_INTERVAL_MS / 60000UL;
+        unsigned long remainder = minutesSinceMidnight % frequencyMinutes;
+        unsigned long delayMs;
+        if (remainder == 0) {
+          delayMs = 0; // We're exactly on a boundary — report immediately
+        } else {
+          delayMs = (frequencyMinutes - remainder) * 60000UL;
+        }
+        // Set lastReportTime so the interval check fires at the aligned time
+        lastReportTime = millis() - (REPORT_INTERVAL_MS - delayMs);
+        Serial.print("Next report aligned in ");
+        Serial.print(delayMs / 60000UL);
+        Serial.println(" minutes.");
       } else {
         ntpSynced = false;
         Serial.println("NTP sync FAILED after all retries.");
@@ -475,7 +496,6 @@ void loop() {
     }
 
     // Every 15 minutes: snapshot running average, cache reading, and attempt server upload
-    static unsigned long lastReportTime = 0;
     if (sensorReady && ntpSynced && (millis() - lastReportTime >= REPORT_INTERVAL_MS)) {
       lastReportTime = millis();
 
