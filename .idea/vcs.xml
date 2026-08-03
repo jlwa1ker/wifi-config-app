@@ -2,5 +2,10 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build_int/_deps/arduinojson-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build_int/_deps/catch2-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build_int/_deps/rapidcheck-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build_int/_deps/rapidcheck-src/ext/catch" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test/build_int/_deps/rapidcheck-src/ext/googletest" vcs="Git" />
   </component>
 </project>

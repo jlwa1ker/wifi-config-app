@@ -113,7 +113,7 @@ catch_discover_tests(test_json_serializer)
 # Property test: response parser (Property 7)
 add_executable(test_response_parser test_response_parser.cpp)
 target_include_directories(test_response_parser PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(test_response_parser PRIVATE Catch2::Catch2WithMain rapidcheck ArduinoJson)
+target_link_libraries(test_response_parser PRIVATE Catch2::Catch2WithMain rapidcheck)
 catch_discover_tests(test_response_parser)
 
 # Unit test: cache send integration (successful/failed transmission)
