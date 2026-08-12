@@ -1,0 +1,6 @@
+# Copy this file to config.local.ps1 and fill in your values.
+# config.local.ps1 is gitignored — never commit credentials.
+
+$env:TEMPMON_SSID     = "YourNetworkName"
+$env:TEMPMON_PASSWORD = "YourPassword"
+$env:TEMPMON_LOCATION = "YourLocation"
