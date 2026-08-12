@@ -60,15 +60,40 @@
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
+// --- Status Bar State Codes ---
+// These 3-letter codes are displayed in the yellow status bar area
+// to indicate the current operational state of the device.
+
+// BOT: Device is booting — initial startup before WiFi initialization
+static const char* STATUS_BOOTING    = "BOT";
+// CFG: AP Mode — no stored credentials (or max retries exceeded), serving config portal
+static const char* STATUS_AP_MODE    = "CFG";
+// CTG: Connecting — credentials found, attempting WiFi connection to stored network
+static const char* STATUS_CONNECTING = "CTG";
+// RTR: Retrying — WiFi connection failed, incrementing retry counter and rebooting
+static const char* STATUS_RETRYING   = "RTR";
+// NTP: NTP Sync — connected to WiFi, synchronizing clock with NTP server
+static const char* STATUS_NTP_SYNC   = "NTP";
+// NTE: NTP Failed — NTP synchronization failed after all retries
+static const char* STATUS_NTP_FAILED = "NTE";
+// ERR: Sensor Failed — AHT20 temperature/humidity sensor did not initialize
+static const char* STATUS_SENSOR_ERR = "ERR";
+// RUN: Running — normal operation, polling sensor and reporting readings
+static const char* STATUS_RUNNING    = "RUN";
+// UPS: Upload Success — readings successfully transmitted to server
+static const char* STATUS_UPLOAD_OK  = "UPS";
+// UPE: Upload Failed — transmission to server failed, readings retained in cache
+static const char* STATUS_UPLOAD_ERR = "UPE";
+
 // Current display state code for the status bar
-static const char* currentStateCode = "BOT";
+static const char* currentStateCode = STATUS_BOOTING;
 
 // --- Status Bar Drawing Functions ---
 
 // Get WiFi signal strength as 0-3 bars
 static int getWifiBars() {
   // Don't call WiFi library during boot — it hasn't been initialized yet
-  if (strcmp(currentStateCode, "BOT") == 0) {
+  if (currentStateCode == STATUS_BOOTING) {
     return 0;
   }
   int status = WiFi.status();
@@ -188,7 +213,7 @@ void oledMsg(const char* line1, const char* line2 = "", const char* line3 = "") 
 // Show current sensor averages and cache count (STA mode)
 void oledShowReadings(float temp_f, float humidity_pct, int cacheCount) {
   display.clearDisplay();
-  currentStateCode = "RUN";
+  currentStateCode = STATUS_RUNNING;
   drawStatusBar();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -208,7 +233,7 @@ void oledShowReadings(float temp_f, float humidity_pct, int cacheCount) {
 // Show upload success indicator
 void oledShowUploadSuccess(int sentCount) {
   display.clearDisplay();
-  currentStateCode = "UPS";
+  currentStateCode = STATUS_UPLOAD_OK;
   drawStatusBar();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -225,7 +250,7 @@ void oledShowUploadSuccess(int sentCount) {
 // Show upload failure indicator with pending cache count
 void oledShowUploadFailed(int cacheCount) {
   display.clearDisplay();
-  currentStateCode = "UPE";
+  currentStateCode = STATUS_UPLOAD_ERR;
   drawStatusBar();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -242,7 +267,7 @@ void oledShowUploadFailed(int cacheCount) {
 // Show NTP synchronization error
 void oledShowNtpError() {
   display.clearDisplay();
-  currentStateCode = "NTE";
+  currentStateCode = STATUS_NTP_FAILED;
   drawStatusBar();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -314,7 +339,7 @@ void setup() {
     }
     webServer_init(WEB_SERVER_PORT);
     webServer_setMode(MODE_CONFIG_FORM);
-    currentStateCode = "CFG";
+    currentStateCode = STATUS_AP_MODE;
     currentState = STATE_AP_MODE;
   } else {
     // Credentials exist — attempt to connect to the stored network
@@ -324,7 +349,7 @@ void setup() {
     Serial.print("Credentials found. Connecting to: ");
     Serial.println(creds.ssid);
     oledMsg("Creds found", creds.ssid, "Connecting...");
-    currentStateCode = "CTG";
+    currentStateCode = STATUS_CONNECTING;
 
     if (wifiManager_connect(creds.ssid, creds.password)) {
       // Connection succeeded — enter STA mode
@@ -350,7 +375,7 @@ void setup() {
 
       // Synchronize clock via NTP before starting sensor/reporting loop.
       // Readings require accurate timestamps, so NTP must succeed first.
-      currentStateCode = "NTP";
+      currentStateCode = STATUS_NTP_SYNC;
       oledMsg("NTP Sync", "Contacting server...");
       if (ntpClient_sync()) {
         ntpSynced = true;
@@ -386,11 +411,11 @@ void setup() {
 
         if (sensorPoller_init()) {
           sensorReady = true;
-          currentStateCode = "RUN";
+          currentStateCode = STATUS_RUNNING;
           Serial.println("AHT20 sensor initialized.");
         } else {
           sensorReady = false;
-          currentStateCode = "ERR";
+          currentStateCode = STATUS_SENSOR_ERR;
           Serial.println("AHT20 sensor init FAILED!");
           oledMsg("Sensor FAILED!", "AHT20 not found", "No polling");
         }
@@ -399,7 +424,7 @@ void setup() {
       currentState = STATE_STA_MODE;
     } else {
       // Connection failed — increment retry counter and reboot
-      currentStateCode = "RTR";
+      currentStateCode = STATUS_RETRYING;
       uint8_t retries = credentialStore_incrementRetry();
       Serial.print("Connection failed. Retry count: ");
       Serial.println(retries);
