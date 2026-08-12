@@ -329,6 +329,7 @@ void setup() {
     bool apResult = wifiManager_startAP();
     Serial.print("AP start result: ");
     Serial.println(apResult ? "SUCCESS" : "FAILED");
+    currentStateCode = STATUS_AP_MODE;
     if (apResult) {
       char urlStr[30];
       IPAddress ip = wifiManager_getIP();
@@ -339,7 +340,6 @@ void setup() {
     }
     webServer_init(WEB_SERVER_PORT);
     webServer_setMode(MODE_CONFIG_FORM);
-    currentStateCode = STATUS_AP_MODE;
     currentState = STATE_AP_MODE;
   } else {
     // Credentials exist — attempt to connect to the stored network
