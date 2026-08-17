@@ -18,12 +18,14 @@
 #define CREDENTIAL_STORE_H
 
 #include "config.h"
+#include <stdint.h>
 
 struct WiFiCredentials {
   bool valid;                           // Validity flag
   char ssid[MAX_SSID_LENGTH + 1];      // Null-terminated SSID
   char password[MAX_PASS_LENGTH + 1];   // Null-terminated password
   char location[MAX_LOCATION_LENGTH + 1]; // Null-terminated location
+  uint8_t retryCount;                   // Consecutive connection failure counter
 };
 
 // Initialize the credential store
@@ -40,5 +42,15 @@ bool credentialStore_write(const char* ssid, const char* password, const char* l
 
 // Clear stored credentials (sets valid flag to false)
 void credentialStore_clear();
+
+// Increment the connection retry counter and persist to flash.
+// Returns the new counter value.
+uint8_t credentialStore_incrementRetry();
+
+// Reset the retry counter to zero and persist to flash.
+void credentialStore_resetRetry();
+
+// Get the current retry counter value.
+uint8_t credentialStore_getRetryCount();
 
 #endif

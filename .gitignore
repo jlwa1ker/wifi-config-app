@@ -22,3 +22,6 @@ build_output.txt
 
 # External dependencies fetched during test builds
 ext/
+
+# Local device configuration (contains credentials)
+scripts/config.local.ps1

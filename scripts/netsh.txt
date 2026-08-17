@@ -1,0 +1,8 @@
+netsh wlan show networks interface="Wi-Fi 2"
+
+netsh wlan show profiles
+
+netsh wlan connect name=tempmon interface="Wi-Fi 2"
+
+netsh wlan show interfaces
+

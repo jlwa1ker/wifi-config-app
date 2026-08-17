@@ -1,3 +1,4 @@
+
 /*
  * Copyright (C) 2025 James L. Walker, Kiro (AI Assistant)
  *
@@ -153,23 +154,26 @@ ReportResult serverReporter_send(int& removalCount) {
     Serial.print("Response body: ");
     Serial.println(body);
 
-    // Parse response JSON using the response parser logic
-    JsonDocument responseDoc;
-    DeserializationError error = deserializeJson(responseDoc, body);
+    // Extract inserted_count and skipped_count using string search.
+    // The full JSON response may be truncated (large "skipped" array),
+    // but these fields appear early in the response and are always present.
+    int insertedCount = -1;
+    int skippedCount = -1;
 
-    if (error) {
-        Serial.print("JSON parse error: ");
-        Serial.println(error.c_str());
-        return REPORT_PARSE_ERROR;
+    const char* insertedKey = strstr(body, "\"inserted_count\":");
+    if (insertedKey) {
+        insertedCount = atoi(insertedKey + 17); // skip past "inserted_count":
     }
 
-    if (!responseDoc["inserted_count"].is<int>() || !responseDoc["skipped_count"].is<int>()) {
-        Serial.println("Missing inserted_count or skipped_count fields!");
-        return REPORT_PARSE_ERROR;
+    const char* skippedKey = strstr(body, "\"skipped_count\":");
+    if (skippedKey) {
+        skippedCount = atoi(skippedKey + 16); // skip past "skipped_count":
     }
 
-    int insertedCount = responseDoc["inserted_count"].as<int>();
-    int skippedCount = responseDoc["skipped_count"].as<int>();
+    if (insertedCount < 0 || skippedCount < 0) {
+        Serial.println("Could not extract inserted_count or skipped_count from response.");
+        return REPORT_PARSE_ERROR;
+    }
 
     removalCount = insertedCount + skippedCount;
     return REPORT_SUCCESS;

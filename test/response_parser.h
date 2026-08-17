@@ -1,12 +1,14 @@
 #ifndef RESPONSE_PARSER_H
 #define RESPONSE_PARSER_H
 
-#include <ArduinoJson.h>
+#include <cstring>
+#include <cstdlib>
 
 /**
- * Extracted pure JSON parsing logic for server ingest responses.
- * This function replicates the response parsing behavior without any
- * network or Arduino dependencies, making it testable on the host.
+ * Extracted response parsing logic for server ingest responses.
+ * Uses string search to extract inserted_count and skipped_count,
+ * which allows parsing even when the response JSON is truncated
+ * (e.g., large "skipped" array exceeds the read buffer).
  *
  * The tempmon2 server responds to POST /ingest with a JSON body like:
  * {
@@ -26,25 +28,33 @@
 
 /**
  * Parse a server ingest response body and compute the removal count.
+ * Uses string search rather than full JSON parsing to handle truncated responses.
  *
- * @param responseBody  The JSON string from the server response
+ * @param responseBody  The response body string (may be truncated)
  * @return The number of readings to remove from cache
  *         (inserted_count + skipped_count), or -1 on parse failure
  */
 static inline int parseIngestResponse(const char* responseBody) {
-    StaticJsonDocument<512> doc;
-    DeserializationError error = deserializeJson(doc, responseBody);
-
-    if (error) {
+    if (responseBody == nullptr) {
         return -1;
     }
 
-    if (!doc.containsKey("inserted_count") || !doc.containsKey("skipped_count")) {
-        return -1;
+    int insertedCount = -1;
+    int skippedCount = -1;
+
+    const char* insertedKey = strstr(responseBody, "\"inserted_count\":");
+    if (insertedKey) {
+        insertedCount = atoi(insertedKey + 17);
     }
 
-    int insertedCount = doc["inserted_count"].as<int>();
-    int skippedCount = doc["skipped_count"].as<int>();
+    const char* skippedKey = strstr(responseBody, "\"skipped_count\":");
+    if (skippedKey) {
+        skippedCount = atoi(skippedKey + 16);
+    }
+
+    if (insertedCount < 0 || skippedCount < 0) {
+        return -1;
+    }
 
     return insertedCount + skippedCount;
 }
