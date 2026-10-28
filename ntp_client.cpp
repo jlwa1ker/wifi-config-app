@@ -18,6 +18,7 @@
 #include <Arduino.h>
 #include <WiFiUdp.h>
 #include "include/ntp_format.h"
+#include "include/ntp_sync_logic.h"
 
 // NTP server and port
 static const char* NTP_SERVER = "pool.ntp.org";
@@ -31,6 +32,11 @@ static WiFiUDP udp;
 static unsigned long epochOffset = 0;       // epoch - (millis()/1000) at sync time
 static unsigned long lastSyncMillis = 0;    // millis() when last sync succeeded
 static bool synced = false;
+
+// Non-blocking resync state machine (see include/ntp_sync_logic.h). Lazily
+// initialized on first ntpClient_tick() so the blocking boot sync runs first.
+static NtpSyncState fsm;
+static bool fsmInitialized = false;
 
 // Send an NTP request packet to the server
 static void sendNTPPacket() {
@@ -46,36 +52,50 @@ static void sendNTPPacket() {
   udp.endPacket();
 }
 
-// Attempt a single NTP sync. Returns true if epoch was obtained.
+// Parse an NTP reply from a 48-byte response buffer and store the resulting
+// clock offset. Updates epochOffset, lastSyncMillis, and synced.
+static void applyNtpResponse(const uint8_t* response) {
+  // Extract the transmit timestamp (seconds since 1900-01-01)
+  // from bytes 40-43 of the response (big-endian 32-bit integer)
+  unsigned long ntpTime = (unsigned long)response[40] << 24 |
+                          (unsigned long)response[41] << 16 |
+                          (unsigned long)response[42] << 8  |
+                          (unsigned long)response[43];
+
+  // Convert NTP time (since 1900) to Unix epoch (since 1970)
+  // 70 years of seconds = 2208988800UL
+  const unsigned long SEVENTY_YEARS = 2208988800UL;
+  unsigned long epoch = ntpTime - SEVENTY_YEARS;
+
+  // Store offset: epoch = offset + (millis()/1000)
+  epochOffset = epoch - (millis() / 1000);
+  lastSyncMillis = millis();
+  synced = true;
+}
+
+// Check for an available NTP reply without blocking. Returns true and applies
+// the offset if a full packet has arrived; returns false otherwise.
+static bool pollForResponse() {
+  if (udp.parsePacket() >= NTP_PACKET_SIZE) {
+    uint8_t response[NTP_PACKET_SIZE];
+    udp.read(response, NTP_PACKET_SIZE);
+    applyNtpResponse(response);
+    return true;
+  }
+  return false;
+}
+
+// Attempt a single blocking NTP sync. Returns true if epoch was obtained.
+// Used only by the blocking boot path (ntpClient_sync).
 static bool attemptSync() {
   udp.begin(2390);  // Local port for NTP
-
   sendNTPPacket();
 
-  // Wait up to 2 seconds for a response
+  // Wait up to the response timeout for a reply
   unsigned long start = millis();
-  while (millis() - start < 2000) {
-    if (udp.parsePacket() >= NTP_PACKET_SIZE) {
-      uint8_t response[NTP_PACKET_SIZE];
-      udp.read(response, NTP_PACKET_SIZE);
+  while (millis() - start < NTP_RESPONSE_TIMEOUT_MS) {
+    if (pollForResponse()) {
       udp.stop();
-
-      // Extract the transmit timestamp (seconds since 1900-01-01)
-      // from bytes 40-43 of the response (big-endian 32-bit integer)
-      unsigned long ntpTime = (unsigned long)response[40] << 24 |
-                              (unsigned long)response[41] << 16 |
-                              (unsigned long)response[42] << 8  |
-                              (unsigned long)response[43];
-
-      // Convert NTP time (since 1900) to Unix epoch (since 1970)
-      // 70 years of seconds = 2208988800UL
-      const unsigned long SEVENTY_YEARS = 2208988800UL;
-      unsigned long epoch = ntpTime - SEVENTY_YEARS;
-
-      // Store offset: epoch = offset + (millis()/1000)
-      epochOffset = epoch - (millis() / 1000);
-      lastSyncMillis = millis();
-      synced = true;
       return true;
     }
     delay(50);
@@ -97,15 +117,61 @@ bool ntpClient_sync() {
   return false;
 }
 
+void ntpClient_tick() {
+  // Lazily initialize the FSM on first use. If a blocking boot sync already
+  // succeeded, start IDLE with the normal 24-hour cadence from that sync;
+  // otherwise start WAITING_TO_SYNC to attempt a first sync.
+  if (!fsmInitialized) {
+    ntpSync_init(fsm);
+    if (synced) {
+      fsm.state = NTP_IDLE;
+      fsm.everSynced = true;
+      fsm.lastAttemptFailed = false;
+      fsm.lastAttemptMillis = lastSyncMillis;
+    }
+    fsmInitialized = true;
+  }
+
+  unsigned long now = millis();
+
+  // Advance timer-only transitions (IDLE/BACKOFF -> WAITING_TO_SYNC when due).
+  ntpSync_advanceTimers(fsm, now);
+
+  switch (fsm.state) {
+    case NTP_WAITING_TO_SYNC: {
+      // Send one request and move to awaiting a reply.
+      udp.begin(2390);
+      sendNTPPacket();
+      ntpSync_onRequestSent(fsm, now);
+      break;
+    }
+    case NTP_AWAITING_RESPONSE: {
+      if (pollForResponse()) {
+        udp.stop();
+        ntpSync_onSuccess(fsm, millis());
+      } else if (ntpSync_responseTimedOut(fsm, now)) {
+        udp.stop();
+        ntpSync_onFailure(fsm, now);
+      }
+      break;
+    }
+    case NTP_IDLE:
+    case NTP_BACKOFF:
+      // Nothing to do; handled by ntpSync_advanceTimers above.
+      break;
+  }
+}
+
+NtpState ntpClient_state() {
+  return fsm.state;
+}
+
 bool ntpClient_isSynced() {
   return synced;
 }
 
-bool ntpClient_needsResync() {
-  if (!synced) {
-    return true;
-  }
-  return (millis() - lastSyncMillis) > NTP_RESYNC_INTERVAL_MS;
+bool ntpClient_timeValid() {
+  return synced;
 }
 
 unsigned long ntpClient_getEpoch() {

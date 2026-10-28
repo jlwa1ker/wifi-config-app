@@ -8,7 +8,10 @@ on:
 
 jobs:
   compile-sketch:
-    runs-on: ubuntu-latest
+    # Pinned to a fixed Ubuntu image rather than ubuntu-latest: the rolling
+    # latest moved to 26.04, which dropped the Python patch version that
+    # arduino/compile-sketches pins, breaking setup-python before compile.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -31,7 +34,8 @@ jobs:
             - .
 
   property-tests:
-    runs-on: ubuntu-latest
+    # Pinned to match compile-sketch; see note above.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
