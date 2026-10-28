@@ -17,20 +17,33 @@
 #ifndef NTP_CLIENT_H
 #define NTP_CLIENT_H
 
+#include "include/ntp_sync_logic.h"
+
 #define NTP_MAX_RETRIES 5
 #define NTP_RETRY_DELAY_MS 10000
-#define NTP_RESYNC_INTERVAL_MS 86400000UL  // 24 hours
 
-// Perform NTP synchronization. Retries up to NTP_MAX_RETRIES times
-// with NTP_RETRY_DELAY_MS between attempts.
+// Perform a blocking NTP synchronization. Retries up to NTP_MAX_RETRIES times
+// with NTP_RETRY_DELAY_MS between attempts. Used once at boot, where a valid
+// epoch is required before the reporting schedule can be aligned.
 // Returns true if sync succeeded.
 bool ntpClient_sync();
 
-// Check if NTP has been successfully synchronized at least once
+// Advance the non-blocking resync state machine. Call once per loop() in STA
+// mode. Sends at most one request and performs at most one receive check per
+// call; never blocks. Handles the periodic 24-hour resync with a 5-minute
+// backoff retry on failure (issue #9).
+void ntpClient_tick();
+
+// Current resync state machine state (for OLED status / logging).
+NtpState ntpClient_state();
+
+// Check if NTP has been successfully synchronized at least once.
 bool ntpClient_isSynced();
 
-// Check if a re-sync is needed (24 hours elapsed since last sync)
-bool ntpClient_needsResync();
+// Whether the clock offset is currently usable for timestamps. True once an
+// initial sync has succeeded and remains true through a failing resync, so
+// reporting can continue while resync retries in the background.
+bool ntpClient_timeValid();
 
 // Get the current UTC epoch time (seconds since 1970-01-01T00:00:00Z).
 // Only valid after successful sync.

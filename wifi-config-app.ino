@@ -33,6 +33,8 @@
 #include "reading_cache.h"
 #include "ntp_client.h"
 #include "server_reporter.h"
+#include "reporter.h"
+#include "include/reporter_logic.h"
 #include "include/temperature_convert.h"
 
 #include <Wire.h>
@@ -294,9 +296,6 @@ bool sensorReady = false;
 // When false, the reporting loop will not run (no valid timestamps).
 bool ntpSynced = false;
 
-// Reporting timer — initialized after NTP sync to align to clock boundaries
-unsigned long lastReportTime = 0;
-
 void setup() {
   // Initialize serial for debug output
   Serial.begin(115200);
@@ -381,20 +380,11 @@ void setup() {
         ntpSynced = true;
         Serial.println("NTP sync succeeded.");
 
-        // Calculate delay to next clock-aligned reporting slot
+        // Align the first report to the next clock boundary. The reporting
+        // cadence is now owned by the reporter module (see reporter.cpp).
         unsigned long epoch = ntpClient_getEpoch();
-        unsigned long secondsSinceMidnight = epoch % 86400UL;
-        unsigned long minutesSinceMidnight = secondsSinceMidnight / 60;
-        unsigned long frequencyMinutes = REPORT_INTERVAL_MS / 60000UL;
-        unsigned long remainder = minutesSinceMidnight % frequencyMinutes;
-        unsigned long delayMs;
-        if (remainder == 0) {
-          delayMs = 0; // We're exactly on a boundary — report immediately
-        } else {
-          delayMs = (frequencyMinutes - remainder) * 60000UL;
-        }
-        // Set lastReportTime so the interval check fires at the aligned time
-        lastReportTime = millis() - (REPORT_INTERVAL_MS - delayMs);
+        reporter_begin(epoch);
+        unsigned long delayMs = reporter_alignmentDelayMs(epoch, REPORTER_INTERVAL_MS);
         Serial.print("Next report aligned in ");
         Serial.print(delayMs / 60000UL);
         Serial.println(" minutes.");
@@ -491,14 +481,19 @@ void loop() {
       }
     }
   } else if (currentState == STATE_STA_MODE) {
-    // Periodic NTP re-sync check (every 24 hours)
-    if (ntpSynced && ntpClient_needsResync()) {
-      Serial.println("NTP re-sync needed. Syncing...");
-      if (ntpClient_sync()) {
-        Serial.println("NTP re-sync succeeded.");
-      } else {
-        // Continue using existing time offset; retry at next opportunity
-        Serial.println("NTP re-sync failed. Will retry later.");
+    // Advance the non-blocking NTP resync state machine. Handles the periodic
+    // 24-hour resync with a 5-minute backoff retry on failure, without blocking
+    // or starving the reporting path (issue #9).
+    if (ntpSynced) {
+      static NtpState lastNtpState = NTP_IDLE;
+      ntpClient_tick();
+      NtpState ns = ntpClient_state();
+      if (ns != lastNtpState) {
+        // Log resync state transitions for diagnostics.
+        if (ns == NTP_WAITING_TO_SYNC) Serial.println("NTP re-sync needed. Syncing...");
+        else if (ns == NTP_IDLE && lastNtpState != NTP_IDLE) Serial.println("NTP re-sync succeeded.");
+        else if (ns == NTP_BACKOFF) Serial.println("NTP re-sync failed. Retry in 5 min.");
+        lastNtpState = ns;
       }
     }
 
@@ -520,43 +515,29 @@ void loop() {
       }
     }
 
-    // Every 15 minutes: snapshot running average, cache reading, and attempt server upload
-    if (sensorReady && ntpSynced && (millis() - lastReportTime >= REPORT_INTERVAL_MS)) {
-      lastReportTime = millis();
-
-      float avg_temp_c, avg_humidity_pct;
-      if (runningAverage_get(avg_temp_c, avg_humidity_pct)) {
-        // Convert to Fahrenheit and get NTP timestamp
-        float temp_f = celsiusToFahrenheit(avg_temp_c);
-        char timestamp[26];
-        ntpClient_formatISO8601(timestamp, sizeof(timestamp));
-
-        // Store in reading cache
-        readingCache_add(timestamp, temp_f, avg_humidity_pct);
-
-        // Attempt to send all cached readings to server
-        Serial.print("Uploading ");
-        Serial.print(readingCache_count());
-        Serial.println(" cached readings...");
-        int removalCount = 0;
-        ReportResult result = serverReporter_send(removalCount);
-
-        if (result == REPORT_SUCCESS) {
-          Serial.print("Upload success. Removing ");
-          Serial.print(removalCount);
+    // Reporting cadence is owned by the reporter module. It fires at most once
+    // per reporting interval and depends only on a still-valid clock offset, so
+    // a failing NTP resync cannot stop uploads.
+    if (sensorReady && ntpSynced) {
+      ReporterOutcome outcome = reporter_tick();
+      switch (outcome.event) {
+        case REPORTER_EVENT_UPLOAD_OK:
+          Serial.print("Upload success. Removed ");
+          Serial.print(outcome.removedCount);
           Serial.println(" readings from cache.");
-          readingCache_removeOldest(removalCount);
-          oledShowUploadSuccess(removalCount);
+          oledShowUploadSuccess(outcome.removedCount);
           delay(1000);
-        } else {
+          break;
+        case REPORTER_EVENT_UPLOAD_FAILED:
           Serial.print("Upload FAILED. ReportResult: ");
-          Serial.println((int)result);
-          // Retain readings in cache for next attempt
-          oledShowUploadFailed(readingCache_count());
+          Serial.println((int)outcome.result);
+          oledShowUploadFailed(outcome.pendingCount);
           delay(1000);
-        }
+          break;
+        case REPORTER_EVENT_SKIPPED:
+        case REPORTER_EVENT_NONE:
+          break;
       }
-      // If runningAverage_get() returns false (< 10 samples), skip this cycle
     }
   }
 }
