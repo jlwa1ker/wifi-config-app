@@ -45,6 +45,13 @@ bool ntpClient_isSynced();
 // reporting can continue while resync retries in the background.
 bool ntpClient_timeValid();
 
+// Whether the most recent completed sync attempt failed. Reflects the resync
+// state machine's backoff state: false while syncs are succeeding, true after
+// a failed attempt until the next successful resync. Used by the status bar
+// to indicate last-sync health (independent of ntpClient_timeValid(), which
+// stays true through a failing resync).
+bool ntpClient_lastSyncFailed();
+
 // Get the current UTC epoch time (seconds since 1970-01-01T00:00:00Z).
 // Only valid after successful sync.
 unsigned long ntpClient_getEpoch();

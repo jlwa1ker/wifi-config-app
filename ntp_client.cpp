@@ -174,6 +174,10 @@ bool ntpClient_timeValid() {
   return synced;
 }
 
+bool ntpClient_lastSyncFailed() {
+  return fsm.lastAttemptFailed;
+}
+
 unsigned long ntpClient_getEpoch() {
   return epochOffset + (millis() / 1000);
 }
