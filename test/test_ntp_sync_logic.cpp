@@ -92,6 +92,34 @@ TEST_CASE("response timeout detection", "[ntp]") {
 }
 
 /*
+ * Status-bar time-sync icon semantics (feature/time-sync-status-icon).
+ *
+ * The icon shows "last sync OK" vs "last sync failed" by reading the FSM's
+ * lastAttemptFailed flag (exposed in the firmware as ntpClient_lastSyncFailed).
+ * This pins the flag's meaning across the success/failure/recovery sequence.
+ */
+TEST_CASE("last-sync flag drives the status icon across recovery", "[ntp][icon]") {
+    NtpSyncState s;
+    ntpSync_init(s);
+
+    // Before any attempt completes: not failed (icon shows OK/pending clock).
+    REQUIRE(s.lastAttemptFailed == false);
+
+    // A failed attempt flips the flag (icon shows slashed clock).
+    ntpSync_onRequestSent(s, 1000);
+    ntpSync_onFailure(s, 3000);
+    REQUIRE(s.lastAttemptFailed == true);
+
+    // Backoff elapses, a retry is attempted and succeeds: flag clears
+    // (icon returns to the plain clock).
+    ntpSync_advanceTimers(s, 3000 + NTP_RESYNC_RETRY_MS);
+    REQUIRE(s.state == NTP_WAITING_TO_SYNC);
+    ntpSync_onRequestSent(s, 3000 + NTP_RESYNC_RETRY_MS);
+    ntpSync_onSuccess(s, 3000 + NTP_RESYNC_RETRY_MS + 100);
+    REQUIRE(s.lastAttemptFailed == false);
+}
+
+/*
  * Property: after any failure, the next attempt is scheduled exactly
  * NTP_RESYNC_RETRY_MS later and never sooner — so repeated failures retry on a
  * bounded 5-minute cadence rather than busy-looping.

@@ -10,6 +10,8 @@ arduino-cli monitor -p COM5 --config baudrate=115200,dtr=off
 
 **Important**: Use `dtr=off` to prevent resetting the board when the monitor connects. The serial monitor holds the COM port exclusively. You must stop the serial monitor before uploading a sketch, then restart it after the upload completes.
 
+**Port note**: COM5 is only the usual port, not a fixed one. The board's COM port can change after a reset (an upload, or a monitor connection with DTR asserted) or after an unplug/reconnect — it has been seen on COM11 as well. Run `arduino-cli board list` to confirm the current port and substitute it for COM5 in the command above.
+
 Workflow:
 1. Stop the serial monitor
 2. Compile and upload the sketch

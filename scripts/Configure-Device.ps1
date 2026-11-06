@@ -5,7 +5,7 @@
 .DESCRIPTION
     1. Connects Wi-Fi 2 to the device's AP (tempmon)
     2. Waits up to 45 seconds for the connection to establish
-    3. Submits the configuration form to the device at http://192.168.1.1
+    3. Submits the configuration form to the device at http://10.0.0.9
 
 .NOTES
     Credentials are read from environment variables:

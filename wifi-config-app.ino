@@ -90,6 +90,12 @@ static const char* STATUS_UPLOAD_ERR = "UPE";
 // Current display state code for the status bar
 static const char* currentStateCode = STATUS_BOOTING;
 
+// Flag indicating whether NTP synchronization succeeded at boot.
+// When false, the reporting loop will not run (no valid timestamps).
+// Declared here (ahead of the status bar drawing functions) so drawStatusBar()
+// can gate the time-sync icon on it.
+bool ntpSynced = false;
+
 // --- Status Bar Drawing Functions ---
 
 // Get WiFi signal strength as 0-3 bars
@@ -172,6 +178,28 @@ static void drawBatteryIcon(int x, int y) {
   }
 }
 
+// Draw a small clock glyph at (x, y) indicating last time-sync health.
+// Drawn in an ~11px square within the 16px-tall status bar.
+//   failed == false: plain clock (circle + hour/minute hands) = last sync OK
+//   failed == true : same clock with a diagonal slash = last sync failed
+// Only meaningful in STA mode; the caller decides when to draw it.
+static void drawTimeSyncIcon(int x, int y, bool failed) {
+  // Clock face: radius-5 circle centered in the status bar height.
+  int cx = x + 5;
+  int cy = y + 8;   // vertically centered in the 16px bar
+  int r = 5;
+  display.drawCircle(cx, cy, r, SSD1306_WHITE);
+
+  // Hands: minute hand pointing up, hour hand pointing right (reads as a clock).
+  display.drawLine(cx, cy, cx, cy - 3, SSD1306_WHITE);      // minute hand (up)
+  display.drawLine(cx, cy, cx + 2, cy, SSD1306_WHITE);      // hour hand (right)
+
+  if (failed) {
+    // Diagonal slash across the face to mark a failed last sync.
+    display.drawLine(cx - r, cy + r, cx + r, cy - r, SSD1306_WHITE);
+  }
+}
+
 // Draw the full status bar in the yellow area (top 16px)
 void drawStatusBar() {
   // Clear only the status bar area
@@ -187,7 +215,13 @@ void drawStatusBar() {
   display.setCursor(18, 4);
   display.print(currentStateCode);
 
-  // 3. Cache count (2 digits, right of center)
+  // 3. Time-sync icon (STA mode only): clock = last sync OK, slashed = failed.
+  // NTP only runs once connected, so only show it after the boot sync.
+  if (ntpSynced) {
+    drawTimeSyncIcon(40, 0, ntpClient_lastSyncFailed());
+  }
+
+  // 4. Cache count (2 digits, right of center)
   int cacheCount = readingCache_count();
   if (cacheCount > 99) cacheCount = 99;
   char cacheStr[4];
@@ -195,7 +229,7 @@ void drawStatusBar() {
   display.setCursor(96, 4);
   display.print(cacheStr);
 
-  // 4. Battery icon (far right, 16px wide)
+  // 5. Battery icon (far right, 16px wide)
   drawBatteryIcon(112, 0);
 }
 
@@ -291,10 +325,6 @@ AppState currentState;
 // Flag indicating whether the AHT20 sensor initialized successfully.
 // When false, the STA mode loop will not poll the sensor.
 bool sensorReady = false;
-
-// Flag indicating whether NTP synchronization succeeded at boot.
-// When false, the reporting loop will not run (no valid timestamps).
-bool ntpSynced = false;
 
 void setup() {
   // Initialize serial for debug output
