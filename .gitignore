@@ -20,6 +20,9 @@ Thumbs.db
 test/build*/
 build_output.txt
 
+# Log files (e.g. longevity serial capture)
+*.log
+
 # External dependencies fetched during test builds
 ext/
 
