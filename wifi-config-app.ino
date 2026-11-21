@@ -35,6 +35,7 @@
 #include "server_reporter.h"
 #include "reporter.h"
 #include "include/reporter_logic.h"
+#include "include/display_power_logic.h"
 #include "include/temperature_convert.h"
 
 #include <Wire.h>
@@ -61,6 +62,42 @@
 #define USB_DETECT_PIN 9
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// --- Display power (OLED wears with lit-pixel hours, so blank it when idle) ---
+// The panel can't be unpowered from a GPIO (too much current), so "off" is the
+// SSD1306 DISPLAYOFF command: every pixel dark, framebuffer kept. Logic lives in
+// include/display_power_logic.h; this is only the hardware glue.
+static DisplayPowerState displayPower;
+static ButtonDebounceState wakeButton;
+static bool displayLit = true;  // what the panel is actually doing
+
+// Push the wanted on/off state to the panel, only when it changes.
+static void applyDisplayPower(bool on) {
+  if (on == displayLit) return;
+  display.ssd1306_command(on ? SSD1306_DISPLAYON : SSD1306_DISPLAYOFF);
+  displayLit = on;
+}
+
+// Keep the screen on with no timer (boot, configuration).
+static void screenHold() {
+  displayPower_hold(displayPower);
+  applyDisplayPower(true);
+}
+
+// End a hold or restart the countdown; the screen turns off when it expires.
+static void screenStartTimer() {
+  displayPower_startTimer(displayPower, millis());
+  applyDisplayPower(true);
+}
+
+// Poll the wake button and expire the countdown. Call every loop().
+static void updateDisplayPower() {
+  unsigned long now = millis();
+  if (buttonDebounce_update(wakeButton, digitalRead(DISPLAY_BUTTON_PIN) == HIGH, now)) {
+    displayPower_buttonPressed(displayPower, now);
+  }
+  applyDisplayPower(displayPower_tick(displayPower, now, DISPLAY_ON_DURATION_MS));
+}
 
 // --- Status Bar State Codes ---
 // These 3-letter codes are displayed in the yellow status bar area
@@ -340,6 +377,13 @@ void setup() {
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
     Serial.println("SSD1306 init failed");
   }
+  // Screen stays on, with no timer, for the whole boot sequence. The timer
+  // starts at the end of setup() (run mode, AP mode, or a stopped-with-error
+  // state). Paths that reboot keep the hold across the reboot.
+  pinMode(DISPLAY_BUTTON_PIN, INPUT_PULLUP);
+  buttonDebounce_init(wakeButton);
+  displayPower_init(displayPower);
+  displayLit = true;
   oledMsg("Booting...");
 
   Serial.println("wifi-config-app: booting...");
@@ -466,11 +510,18 @@ void setup() {
     }
   }
 
+  // Boot sequence is over: run mode, AP mode, or stopped with an error (NTP or
+  // sensor failure, AP failure). Start the screen countdown.
+  screenStartTimer();
+
   Serial.print("Boot complete. State: ");
   Serial.println(currentState == STATE_AP_MODE ? "AP_MODE" : "STA_MODE");
 }
 
 void loop() {
+  // Wake button and screen timeout
+  updateDisplayPower();
+
   // Poll the web server for incoming HTTP requests
   webServer_poll();
 
@@ -496,6 +547,9 @@ void loop() {
 
       Serial.print("Credentials received for: ");
       Serial.println(ssid);
+      // Configuration sequence: keep the screen on through the save, the reboot
+      // and the next boot, until the device reaches run mode.
+      screenHold();
       oledMsg("Creds received", ssid, "Saving & reboot...");
 
       // Save credentials to flash and reboot.
@@ -508,6 +562,8 @@ void loop() {
       } else {
         Serial.println("Failed to write credentials to flash!");
         webServer_setError("Failed to save credentials. Please try again.");
+        // Stopped with an error and still in AP mode: start the countdown.
+        screenStartTimer();
       }
     }
   } else if (currentState == STATE_STA_MODE) {

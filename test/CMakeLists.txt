@@ -128,6 +128,12 @@ target_include_directories(test_ntp_sync_logic PRIVATE ${CMAKE_CURRENT_SOURCE_DI
 target_link_libraries(test_ntp_sync_logic PRIVATE Catch2::Catch2WithMain rapidcheck)
 catch_discover_tests(test_ntp_sync_logic)
 
+# Unit + property test: OLED power timeout and wake-button debounce
+add_executable(test_display_power_logic test_display_power_logic.cpp)
+target_include_directories(test_display_power_logic PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(test_display_power_logic PRIVATE Catch2::Catch2WithMain rapidcheck)
+catch_discover_tests(test_display_power_logic)
+
 # Unit + property test: reporting cadence state machine (issue #9 — slot alignment)
 add_executable(test_reporter_logic test_reporter_logic.cpp)
 target_include_directories(test_reporter_logic PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
