@@ -39,6 +39,12 @@ const int INGEST_PORT = 80;
 const unsigned long REPORT_INTERVAL_MS = 900000UL;  // 15 minutes
 const unsigned long INGEST_RESPONSE_TIMEOUT_MS = 10000;
 
+// Display power: the OLED wears out with lit-pixel hours, so it is blanked when
+// not in use. After a wake event the screen stays on for this long.
+const unsigned long DISPLAY_ON_DURATION_MS = 15000;
+// Normally-open wake button between this pin and ground (internal pull-up).
+const int DISPLAY_BUTTON_PIN = 10;
+
 // Credential storage
 const int MAX_SSID_LENGTH = 32;
 const int MAX_PASS_LENGTH = 64;

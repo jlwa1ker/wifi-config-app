@@ -65,7 +65,8 @@ This plan implements periodic hygrometer (temperature and humidity) reporting fo
   - [x] 3.3 Create NTP client Arduino module
     - Create `ntp_client.h` and `ntp_client.cpp`
     - Implement `ntpClient_sync()` with up to 5 retries at 10-second intervals using `WiFiUDP`
-    - Implement `ntpClient_isSynced()`, `ntpClient_needsResync()` (24-hour interval), `ntpClient_getEpoch()`, `ntpClient_formatISO8601()`
+    - Implement `ntpClient_isSynced()`, `ntpClient_getEpoch()`, `ntpClient_formatISO8601()`
+    - Originally also `ntpClient_needsResync()` (24-hour interval). Removed and replaced by the resync state machine in task 11 (issue #9)
     - Uses `pool.ntp.org` as NTP server; stores epoch offset from `millis()`
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
@@ -177,6 +178,43 @@ This plan implements periodic hygrometer (temperature and humidity) reporting fo
 - [x] 10. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
+- [x] 11. Replace the NTP resync check with a non-blocking state machine (issue #9, PR #24)
+  - [x] 11.1 Create `include/ntp_sync_logic.h`
+    - States IDLE, WAITING_TO_SYNC, AWAITING_RESPONSE, BACKOFF; 24 h interval, 5 min retry, 2 s response timeout
+    - _Requirements: 3.2, 3.6, 3.7, 3.8, 3.10_
+  - [x] 11.2 Add `ntpClient_tick()`, `ntpClient_state()`, `ntpClient_timeValid()` to `ntp_client`; keep the blocking `ntpClient_sync()` for boot only; remove `ntpClient_needsResync()`
+    - _Requirements: 3.6, 3.9_
+  - [x]* 11.3 Write tests in `test/test_ntp_sync_logic.cpp`
+    - **Property 9: Failed NTP sync retries on the 5-minute cadence**
+    - **Validates: Requirements 3.6, 3.7**
+
+- [x] 12. Separate reporting cadence into its own module (issue #9, PR #24)
+  - [x] 12.1 Create `include/reporter_logic.h` with slot alignment moved out of `setup()`
+    - _Requirements: 5.8_
+  - [x] 12.2 Create `reporter.h` / `reporter.cpp`; the sketch ticks it and maps its outcome to OLED and serial output
+    - _Requirements: 5.7, 5.8_
+  - [x]* 12.3 Write tests in `test/test_reporter_logic.cpp`
+    - **Property 10: Report slots align to wall-clock boundaries**
+    - **Validates: Requirements 5.8**
+
+- [x] 13. Add the time-sync status-bar icon
+  - [x] 13.1 Add `ntpClient_lastSyncFailed()` and `drawTimeSyncIcon()`; draw it in `drawStatusBar()` once `ntpSynced`
+    - _Requirements: 7.4, 7.5, 7.6, 7.7_
+  - [x]* 13.2 Add a test that pins the last-sync flag across failure and recovery in `test/test_ntp_sync_logic.cpp`
+    - _Requirements: 7.5, 7.6_
+
+- [x] 14. Blank the OLED when idle and wake it with a button
+  - [x] 14.1 Create `include/display_power_logic.h` (hold, timer, button handling, debounce)
+    - _Requirements: 8.2 to 8.5, 8.7 to 8.10_
+  - [x] 14.2 Add `DISPLAY_ON_DURATION_MS` and `DISPLAY_BUTTON_PIN` to `config.h`
+    - _Requirements: 8.6_
+  - [x] 14.3 Add the sketch glue: `INPUT_PULLUP` on pin 10, `applyDisplayPower()` using SSD1306 `DISPLAYOFF` / `DISPLAYON`, `screenHold()`, `screenStartTimer()`, `updateDisplayPower()` at the top of `loop()`
+    - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.11_
+  - [x]* 14.4 Write tests in `test/test_display_power_logic.cpp`
+    - **Property 11: Short button glitches are ignored**
+    - **Validates: Requirements 8.10**
+  - [ ] 14.5 Verify on the device: screen on through boot, off 15 s after run mode or AP mode, button wakes and restarts the countdown, press during boot is ignored
+
 ## Notes
 
 - Tasks marked with `*` are optional and can be skipped for faster MVP
@@ -185,7 +223,7 @@ This plan implements periodic hygrometer (temperature and humidity) reporting fo
 - Property tests validate universal correctness properties from the design document
 - Unit tests validate specific examples and edge cases
 - Pure logic is extracted into testable headers following the existing project pattern (`test/health_parser.h`, `test/url_decode.h`)
-- All Arduino-specific code lives in `.cpp`/`.h` module files; pure logic in `test/*.h` headers for host-based testing
+- All Arduino-specific code lives in `.cpp`/`.h` module files; pure logic lives in headers for host-based testing: `include/*.h` when production code includes it, `test/*.h` when only tests do (see the header-placement steering)
 - The implementation language is C++ (Arduino framework) matching the existing project
 
 ## Task Dependency Graph
@@ -199,7 +237,10 @@ This plan implements periodic hygrometer (temperature and humidity) reporting fo
     { "id": 3, "tasks": ["6.5", "9.1"] },
     { "id": 4, "tasks": ["8.1", "8.5"] },
     { "id": 5, "tasks": ["8.2", "8.3"] },
-    { "id": 6, "tasks": ["8.4"] }
+    { "id": 6, "tasks": ["8.4"] },
+    { "id": 7, "tasks": ["11.1", "12.1", "14.1", "14.2"] },
+    { "id": 8, "tasks": ["11.2", "11.3", "12.2", "12.3", "14.3", "14.4"] },
+    { "id": 9, "tasks": ["13.1", "13.2", "14.5"] }
   ]
 }
 ```

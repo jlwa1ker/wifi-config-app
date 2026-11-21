@@ -14,6 +14,13 @@ This document specifies the requirements for periodic hygrometer (temperature an
 - **NTP_Client**: The component that synchronizes the device's internal clock with a Network Time Protocol server to obtain accurate UTC timestamps
 - **Report_Interval**: The 15-minute period between successive attempts to transmit cached readings to the Ingest_Endpoint
 - **OLED_Display**: The SSD1306 OLED display (I2C address 0x3C) used to show device status
+- **Resync_State_Machine**: The non-blocking state machine inside the NTP_Client that schedules periodic re-synchronization and retries failed attempts without blocking the rest of the Device
+- **Reporter**: The component that owns the Report_Interval cadence and the snapshot, cache and upload lifecycle, independent of NTP_Client scheduling
+- **Time_Sync_Icon**: A small clock glyph in the OLED_Display status bar showing the outcome of the most recent NTP synchronization attempt
+- **Boot_Sequence**: The period from power-up or reset until the Device reaches run mode, enters AP mode, or stops with an error
+- **Configuration_Sequence**: The period from receipt of WiFi credentials from the web application until the Device enters run mode
+- **Display_Timeout**: The fixed period, set by the constant `DISPLAY_ON_DURATION_MS`, for which the OLED_Display stays lit after a wake event
+- **Wake_Button**: A normally-open pushbutton wired between GPIO pin 10 and ground, read with the internal pull-up enabled
 
 ## Requirements
 
@@ -50,6 +57,13 @@ This document specifies the requirements for periodic hygrometer (temperature an
 3. IF the initial NTP synchronization fails, THEN THE Device SHALL retry synchronization up to 5 times with a 10-second delay between attempts
 4. IF all NTP synchronization retries fail, THEN THE Device SHALL display an error on the OLED_Display and refrain from recording readings until synchronization succeeds
 5. THE NTP_Client SHALL produce timestamps in UTC conforming to ISO 8601 format with timezone offset (e.g., "2024-01-15T10:30:00+00:00")
+6. THE Resync_State_Machine SHALL perform periodic re-synchronization without blocking sensor polling, reporting, or display updates
+7. IF a re-synchronization attempt fails, THEN THE Resync_State_Machine SHALL wait 5 minutes and try again, repeating until an attempt succeeds, and SHALL NOT retry sooner than 5 minutes after a failure
+8. WHEN a re-synchronization attempt succeeds, THE Resync_State_Machine SHALL return to the 24-hour re-synchronization interval
+9. WHILE a re-synchronization is failing, THE NTP_Client SHALL continue to provide timestamps from the clock offset of the last successful synchronization
+10. WHEN a single NTP request receives no reply within 2 seconds, THE Resync_State_Machine SHALL treat the attempt as failed
+
+_Criteria 6 to 10 resolve issue #9: a failed 24-hour re-synchronization previously retried continuously and blocked reporting._
 
 ### Requirement 4: Reading Cache
 
@@ -74,6 +88,8 @@ This document specifies the requirements for periodic hygrometer (temperature an
 4. IF the Ingest_Endpoint returns an HTTP error response or the connection fails, THEN THE Device SHALL retain all readings in the Reading_Cache for the next Report_Interval attempt
 5. IF the Ingest_Endpoint returns a response indicating some readings were skipped as duplicates, THEN THE Device SHALL remove those skipped readings from the Reading_Cache along with the inserted readings
 6. THE Device SHALL NOT start a WiFiServer in STA mode; the web server only runs in AP mode for WiFi credential configuration, so no WiFiServer/WiFiClient conflict exists during data transmission
+7. THE Reporter SHALL schedule reports independently of the Resync_State_Machine; a failing or in-progress NTP re-synchronization SHALL NOT delay or skip a report while a valid clock offset exists
+8. WHEN the initial NTP synchronization succeeds, THE Reporter SHALL align the first report to the next wall-clock multiple of the Report_Interval since midnight UTC (or report immediately when already on a boundary)
 
 ### Requirement 6: Temperature Unit Conversion
 
@@ -93,3 +109,25 @@ This document specifies the requirements for periodic hygrometer (temperature an
 1. WHILE the Device is in STA mode, THE OLED_Display SHALL show the current Running_Average temperature and relative humidity values
 2. WHEN the Device successfully transmits readings to the Ingest_Endpoint, THE OLED_Display SHALL briefly indicate a successful upload
 3. IF the Device fails to transmit readings to the Ingest_Endpoint, THEN THE OLED_Display SHALL indicate the failure and show the number of cached readings pending transmission
+4. WHILE the Device is in STA mode and the initial NTP synchronization has succeeded, THE OLED_Display status bar SHALL show the Time_Sync_Icon
+5. WHILE the most recent NTP synchronization attempt succeeded, THE Time_Sync_Icon SHALL be a plain clock
+6. WHILE the most recent NTP synchronization attempt failed, THE Time_Sync_Icon SHALL be a clock with a diagonal slash, and WHEN a later attempt succeeds THE Time_Sync_Icon SHALL return to a plain clock
+7. THE OLED_Display SHALL NOT show the Time_Sync_Icon before the initial NTP synchronization succeeds or while the Device is in AP mode
+
+### Requirement 8: OLED Power Management
+
+**User Story:** As a device owner, I want the display dark whenever nobody is looking at it, so that the OLED does not wear out; the panel starts to fail after about 1000 hours lit and cannot be powered from a GPIO pin because it draws too much current.
+
+#### Acceptance Criteria
+
+1. THE Device SHALL turn the OLED_Display off by turning every pixel off, and SHALL NOT rely on switching the panel's power supply
+2. THE Device SHALL keep the OLED_Display lit for the entire Boot_Sequence, with no timer running
+3. WHEN the Device enters AP mode, or the Boot_Sequence stops because of an error, THE Device SHALL start the Display_Timeout countdown
+4. WHEN the Device reaches run mode, THE Device SHALL start the Display_Timeout countdown
+5. WHEN the Device receives WiFi credentials from the web application, THE Device SHALL turn the OLED_Display on and keep it lit, with no timer running, for the Configuration_Sequence until the Device enters run mode
+6. THE Display_Timeout SHALL be defined by the constant `DISPLAY_ON_DURATION_MS` in `config.h`, with an initial value of 15 seconds, so that it can be adjusted at build time
+7. WHEN the Display_Timeout countdown expires, THE Device SHALL turn the OLED_Display off
+8. WHEN the Wake_Button is pressed, THE Device SHALL turn the OLED_Display on if it is off and start the Display_Timeout countdown, or restart the countdown from its start time if it is already running
+9. WHILE the OLED_Display is held lit for the Boot_Sequence or Configuration_Sequence, THE Device SHALL ignore Wake_Button presses so that a press cannot end the hold early
+10. THE Device SHALL debounce the Wake_Button in software, registering one press for each press-and-release regardless of contact bounce, and ignoring a low level shorter than 30 milliseconds
+11. WHILE the OLED_Display is off, sensor updates and upload indicators SHALL NOT turn it on
